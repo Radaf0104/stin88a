@@ -19,6 +19,23 @@
       }
     }
   </script>
+  <!-- Start everything the first 3D frame needs at once, instead of one file after another as the code discovers it:
+       the model data and the code libraries download in parallel while the cover picture is shown. -->
+  <link rel="preload" href="data/model.json" as="fetch" crossorigin />
+  <link rel="preload" href="data/units.json" as="fetch" crossorigin />
+  <link rel="preload" href="data/geometry.q.bin.gz" as="fetch" crossorigin />
+  <link rel="preload" href="data/cap.q.bin.gz" as="fetch" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/GTAOPass.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/RGBELoader.js" />
+  <link rel="modulepreload" href="js/main.js" />
+  <link rel="modulepreload" href="js/materials.js" />
+  <link rel="modulepreload" href="js/environment.js" />
+  <link rel="modulepreload" href="js/landscape.js" />
 </head>
 <body>
   <div id="app">
@@ -76,7 +93,7 @@
     <div id="loading"><div class="spinner"></div><div id="loadingText">Loading…</div></div>
 
     <section id="hero">
-      <img id="heroImg" alt="" />
+      <img id="heroImg" src="images/renders/r01.jpg" fetchpriority="high" alt="" />
       <div class="hero-text">
         <h1 id="heroTitle"></h1>
         <p id="heroTag"></p>
