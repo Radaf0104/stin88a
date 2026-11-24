@@ -142,19 +142,19 @@
   ],
   "images": [
     {
-      "mimeType": "image/jpeg",
+      "mimeType": "image/webp",
       "name": "fern_02_nor_gl",
-      "uri": "textures/fern_02_nor_gl_1k.jpg"
+      "uri": "textures/fern_02_nor_gl.webp"
     },
     {
-      "mimeType": "image/jpeg",
+      "mimeType": "image/webp",
       "name": "fern_02_diff-fern_02_alpha",
-      "uri": "textures/fern_02_diff_1k.jpg"
+      "uri": "textures/fern_02_diff.webp"
     },
     {
-      "mimeType": "image/jpeg",
+      "mimeType": "image/webp",
       "name": "fern_02_rough",
-      "uri": "textures/fern_02_arm_1k.jpg"
+      "uri": "textures/fern_02_arm.webp"
     }
   ],
   "accessors": [
