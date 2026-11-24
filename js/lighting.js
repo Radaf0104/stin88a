@@ -19,9 +19,13 @@ export function createMoodLights(scene, count) {
     return l;
   });
   const anchors = [];
-  let factor = 1;
-  const add = (pos, mood) => anchors.push({ pos: pos.clone(), mood: MOODS[mood], d: 0 });
+  let factor = 1, dirty = true;
+  const last = new THREE.Vector3(Infinity, 0, 0);
+  const add = (pos, mood) => { anchors.push({ pos: pos.clone(), mood: MOODS[mood], d: 0 }); dirty = true; };
   function update(focus) {
+    // the nearest lamps only change when the focus point moves (≥ 25 cm) or the lamp strength changes
+    if (!dirty && last.distanceToSquared(focus) < 0.0625) return;
+    dirty = false; last.copy(focus);
     for (const a of anchors) a.d = a.pos.distanceToSquared(focus);
     anchors.sort((a, b) => a.d - b.d);
     pool.forEach((l, i) => {
@@ -33,7 +37,7 @@ export function createMoodLights(scene, count) {
       l.distance = a.mood === MOODS.communal || a.mood === MOODS.villa ? 10 : 6;
     });
   }
-  return { add, update, anchors, setFactor: (f) => (factor = f), clear: () => (anchors.length = 0) };
+  return { add, update, anchors, setFactor: (f) => { factor = f; dirty = true; }, clear: () => { anchors.length = 0; dirty = true; } };
 }
 
 // Daylight through the window of the room you're in: one soft rectangular area light filling the window / balcony

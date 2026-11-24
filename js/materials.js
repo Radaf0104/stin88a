@@ -92,31 +92,56 @@ function textures(kind) {
   return set;
 }
 
-// ---------- real photo textures (CC0, Poly Haven, 1k): colour + bump (normal) + roughness, tiled in metres ----------
+// ---------- real photo textures (CC0, Poly Haven): colour + bump (normal) + roughness, tiled in metres ----------
+// WebP (tools/encode-textures.js): colour + normal 1024 px, roughness 512 px. `avg` = each map's average colour, used as a
+// 1-pixel stand-in until the photo has downloaded, so surfaces already look right (just smooth) on the first frame.
 const REAL = {
-  plaster: { id: "white_plaster_02", size: 2.2, tint: 0.7, bumpOnly: true }, // clean white like the renders: keep only the fine bump
-  wood: { id: "oak_veneer_01", size: 1.4, tint: 0.72 },
-  deck: { id: "oak_veneer_01", size: 1.4, tint: 0.55 },
-  concrete: { id: "concrete_floor_worn_001", size: 2.5, tint: 0.5 },
-  tile: { id: "marble_01", size: 1.8, tint: 0.85 },
-  grass: { id: "leafy_grass", size: 3.5, tint: 1, bumpOnly: true }, // the photo is dry leaves: keep its bump, colour it green
-  asphalt: { id: "asphalt_02", size: 4, tint: 1 },
+  plaster: { id: "white_plaster_02", size: 2.2, tint: 0.7, bumpOnly: true, avg: { nor: [129, 129, 252], rough: [231, 231, 231] } }, // clean white like the renders: keep only the fine bump
+  wood: { id: "oak_veneer_01", size: 1.4, tint: 0.72, avg: { diff: [161, 126, 87], nor: [127, 127, 254], rough: [135, 135, 135] } },
+  deck: { id: "oak_veneer_01", size: 1.4, tint: 0.55, avg: { diff: [161, 126, 87], nor: [127, 127, 254], rough: [135, 135, 135] } },
+  concrete: { id: "concrete_floor_worn_001", size: 2.5, tint: 0.5, avg: { diff: [86, 86, 84], nor: [128, 127, 251], rough: [138, 138, 138] } },
+  tile: { id: "marble_01", size: 1.8, tint: 0.85, avg: { diff: [177, 157, 122], nor: [125, 124, 253], rough: [129, 129, 129] } },
+  grass: { id: "leafy_grass", size: 3.5, tint: 1, bumpOnly: true, noRough: true, avg: { nor: [127, 128, 226] } }, // the photo is dry leaves: keep its bump, colour it green
+  asphalt: { id: "asphalt_02", size: 4, tint: 1, avg: { diff: [90, 90, 85], nor: [127, 127, 248], rough: [196, 196, 196] } },
 };
-const texLoader = new THREE.TextureLoader();
+// Photos are not fetched while the building is being built: startTextureLoading() (called once the first frame is on
+// screen) downloads them, so the model, code and sky get the bandwidth first.
+const imgLoader = new THREE.ImageLoader();
+const pending = [];
+let loadingStarted = false;
+function fetchInto(t, url) {
+  imgLoader.load(url, (img) => {
+    t.image = img;
+    t.dispose(); // the 1-pixel stand-in was already uploaded: free it so the full-size photo gets new GPU storage
+    t.needsUpdate = true;
+  });
+}
+export function startTextureLoading() {
+  if (loadingStarted) return;
+  loadingStarted = true;
+  for (const [t, url] of pending.splice(0)) fetchInto(t, url);
+}
 const realCache = {};
 function realTextures(kind) {
   const r = REAL[kind];
   if (!r) return null;
   if (realCache[kind]) return realCache[kind];
   const load = (suffix, srgb) => {
-    const t = texLoader.load(`assets/tex/${r.id}_${suffix}.jpg`);
+    const px = document.createElement("canvas"); px.width = px.height = 1;
+    const [cr, cg, cb] = r.avg[suffix];
+    const g = px.getContext("2d"); g.fillStyle = `rgb(${cr},${cg},${cb})`; g.fillRect(0, 0, 1, 1);
+    const t = new THREE.Texture(px);
+    t.needsUpdate = true;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.anisotropy = 8;
     t.repeat.set(1 / r.size, 1 / r.size);
+    const url = `assets/tex/${r.id}_${suffix}.webp`;
+    if (loadingStarted) fetchInto(t, url); else pending.push([t, url]);
     return t;
   };
-  return (realCache[kind] = { map: r.bumpOnly ? null : load("diff", true), photo: load("diff", true), normal: load("nor", false), rough: load("rough", false), tint: r.tint });
+  // only the maps a material will actually use are downloaded (bump-only sets skip the colour photo, the lawn its roughness)
+  return (realCache[kind] = { map: r.bumpOnly ? null : load("diff", true), normal: load("nor", false), rough: r.noRough ? null : load("rough", false), tint: r.tint });
 }
 
 // ---------- presets ----------
@@ -148,10 +173,15 @@ export function presetFor(name, info = {}) {
   return { kind: "plain", color: rgb(info), rough: 0.7 };
 }
 
-const matCache = new Map();
+const matCache = new Map(), lookCache = new Map();
+// Many Revit materials end up looking identical (CEMENT, CONCRETE, Default Wall, Gypsum… are all the same cream plaster).
+// They share one material, so the building can be drawn with one mesh per *look* per floor instead of per Revit name.
+const lookKey = (p) => JSON.stringify(p, (k, v) => (v && v.isColor ? v.getHexString() : v));
 export function materialFor(name, info) {
   if (matCache.has(name)) return matCache.get(name);
   const p = presetFor(name, info);
+  const key = lookKey(p);
+  if (lookCache.has(key)) { const shared = lookCache.get(key); matCache.set(name, shared); return shared; }
   let m;
   const tex = (kind) => {
     const t = textures(kind);
@@ -191,7 +221,9 @@ export function materialFor(name, info) {
       m = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metal, roughness: p.rough, side: THREE.DoubleSide });
       break;
     case "porcelain":
-      m = new THREE.MeshPhysicalMaterial({ color: p.color, roughness: 0.18, clearcoat: 0.8, clearcoatRoughness: 0.08, side: THREE.DoubleSide });
+      // glazed ceramic: a standard material with a crisp, slightly stronger reflection gives the look of the former
+      // clearcoat layer without its second specular lobe (tiles cover whole bathroom floors and walls)
+      m = new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.1, envMapIntensity: 1.25, side: THREE.DoubleSide });
       break;
     case "grass": { // lawn: green colour variation (generated) + the photo's bump
       const r = realTextures("grass"), g = tex("grass");
@@ -229,6 +261,7 @@ export function materialFor(name, info) {
   // Revit solids are closed and consistently wound, so opaque surfaces only need their front side (half the work).
   if (!m.transparent) m.side = THREE.FrontSide;
   matCache.set(name, m);
+  lookCache.set(key, m);
   return m;
 }
 
@@ -263,10 +296,10 @@ function addBattens(m) {
 // is dropped; vertical faces put V on the world-up axis so wood grain / slats run vertically like the renders.
 export function addBoxUVs(geo) {
   const p = geo.attributes.position.array, uv = new Float32Array((p.length / 3) * 2);
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), nrm = new THREE.Vector3();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), nrm = new THREE.Vector3(), ab = new THREE.Vector3();
   for (let i = 0; i < p.length; i += 9) {
     a.fromArray(p, i); b.fromArray(p, i + 3); c.fromArray(p, i + 6);
-    nrm.subVectors(c, b).cross(a.clone().sub(b));
+    nrm.subVectors(c, b).cross(ab.subVectors(a, b));
     const ax = Math.abs(nrm.x), ay = Math.abs(nrm.y), az = Math.abs(nrm.z);
     for (let k = 0; k < 3; k++) {
       const x = p[i + k * 3], y = p[i + k * 3 + 1], z = p[i + k * 3 + 2], o = (i / 3 + k) * 2;
@@ -278,13 +311,5 @@ export function addBoxUVs(geo) {
   geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 }
 
-// copies of a photo texture set at a different tile size (e.g. lawn texture reused as tree foliage)
-export function photoTextures(kind, sizeMetres) {
-  const r = realTextures(kind);
-  if (!r) return null;
-  const c = (t) => { const x = t.clone(); x.repeat.set(1 / sizeMetres, 1 / sizeMetres); x.needsUpdate = true; return x; };
-  return { map: c(r.map), normal: c(r.normal) };
-}
-
 export function setLampGlow(k) { for (const m of matCache.values()) if (m.userData.lamp) m.emissiveIntensity = k; }
-export function allMaterials() { return [...matCache.values()]; }
+export function allMaterials() { return [...lookCache.values()]; }

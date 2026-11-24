@@ -12,7 +12,8 @@ export function createWalker({ camera, dom, geometry, onExit }) {
   let yaw = 0, pitch = 0, onGround = false, active = false;
   const keys = new Set();
   const seg = new THREE.Line3(), box = new THREE.Box3(), triPt = new THREE.Vector3(), capPt = new THREE.Vector3();
-  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), moveV = new THREE.Vector3();
+  const downRay = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, -1, 0));
   const touch = { move: null, look: null, mx: 0, my: 0 };
 
   // ---- input ----
@@ -69,7 +70,7 @@ export function createWalker({ camera, dom, geometry, onExit }) {
     let s = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) + touch.mx;
     const speed = run ? 3.2 : 1.6;
     const fwd = tmp.set(-Math.sin(yaw), 0, -Math.cos(yaw)), right = tmp2.set(Math.cos(yaw), 0, -Math.sin(yaw));
-    const move = new THREE.Vector3().addScaledVector(fwd, f).addScaledVector(right, s);
+    const move = moveV.set(0, 0, 0).addScaledVector(fwd, f).addScaledVector(right, s);
     if (move.lengthSq() > 1) move.normalize();
     vel.x = move.x * speed; vel.z = move.z * speed;
     vel.y = onGround ? -1 : vel.y - 9.8 * dt;
@@ -123,10 +124,10 @@ export function createWalker({ camera, dom, geometry, onExit }) {
     // fast ray test against the building (used to find what the mouse is pointing at); all hits, nearest first
     raycastAll(ray) { return bvh.raycast(ray, THREE.DoubleSide).sort((a, b) => a.distance - b.distance); },
     // drop a point onto the floor below it (used to place spawn points)
+    // (one ray reused: this runs ~9,000 times while the lawn is planted)
     floorBelow(p) {
-      const r = new THREE.Raycaster(p.clone().setY(p.y + 0.5), new THREE.Vector3(0, -1, 0), 0, 3);
-      r.firstHitOnly = true;
-      const hit = bvh.raycastFirst(r.ray, THREE.DoubleSide);
+      downRay.origin.set(p.x, p.y + 0.5, p.z);
+      const hit = bvh.raycastFirst(downRay, THREE.DoubleSide, 0, 3);
       return hit ? hit.point : null;
     },
   };

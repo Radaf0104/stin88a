@@ -1,13 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { Pass, FullScreenQuad } from "three/addons/postprocessing/Pass.js";
+import { CopyShader } from "three/addons/shaders/CopyShader.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { CONFIG } from "./config.js";
-import { materialFor, addBoxUVs, setLampGlow, allMaterials, photoTextures } from "./materials.js";
+import { materialFor, addBoxUVs, setLampGlow, allMaterials, startTextureLoading } from "./materials.js";
 import { createLandscape } from "./landscape.js";
 import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
@@ -27,6 +28,7 @@ const STR = {
     placeholder: "Placeholder — the 360° render from Unreal will appear here", loading: "Loading 3D model…", lang: "ID",
     explore: "Explore in 3D", renders: "Gallery",
     nSpaces: (n) => `${n} shared spaces`, stepIn: "Step inside", photos: "Photos", exitRoom: "← Exit room",
+    panMouse: "right-drag to move the view", panTouch: "two fingers to move the view",
     hintInside: "Drag to look around", roomPhotos: "Room photos", seeAngle: "See this angle in 3D", back: "Back to 3D",
     time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", walk: "🚶 Walk", hq: "HQ", lite: "Lite",
     exitWalk: "✕ Exit walk", walkHere: "🚶 Walk around", bath: "bathroom",
@@ -44,6 +46,7 @@ const STR = {
     placeholder: "Contoh — render 360° dari Unreal akan tampil di sini", loading: "Memuat model 3D…", lang: "EN",
     explore: "Jelajahi 3D", renders: "Galeri",
     nSpaces: (n) => `${n} ruang bersama`, stepIn: "Masuk ke kamar", photos: "Foto", exitRoom: "← Keluar",
+    panMouse: "klik kanan + geser untuk menggeser tampilan", panTouch: "dua jari untuk menggeser tampilan",
     hintInside: "Geser untuk melihat sekeliling", roomPhotos: "Foto kamar", seeAngle: "Lihat sudut ini di 3D", back: "Kembali ke 3D",
     time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", walk: "🚶 Jalan", hq: "HQ", lite: "Ringan",
     exitWalk: "✕ Selesai", walkHere: "🚶 Jalan-jalan", bath: "kamar mandi",
@@ -76,7 +79,10 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 800); // tight near/far = precise depth for AO
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
-controls.enablePan = false; // the camera always orbits the building; it can't be dragged away from it
+// Pan: right-drag (or Ctrl/Shift + drag) with a mouse, two fingers on a touch screen. The point the camera orbits
+// around is kept near the building (see clampPan below), so the view can't be dragged off the site.
+controls.enablePan = true;
+controls.panSpeed = 0.9;
 controls.maxPolarAngle = Math.PI * 0.48;
 controls.minDistance = 6;
 controls.maxDistance = 220;
@@ -88,11 +94,32 @@ sun.shadow.mapSize.setScalar(quality.high ? 4096 : 1024);
 const mood = createMoodLights(scene, quality.high ? 6 : 3);
 
 // Post-processing: ambient occlusion (contact shadows) + soft bloom on lamps. High quality only.
-let composer = null, gtao = null, gradePass = null;
+let composer = null, gtao = null, gradePass = null, bloomPass = null, scenePass = null;
+// The scene is drawn into its own 4× multisampled target (smooth edges; stencil for the section caps) and resolved once
+// into the composer's plain buffers. The post passes (bloom, tone mapping, grade) then work on single-sample buffers:
+// multisampling the composer's two ping-pong buffers made every full-screen pass pay a resolve (≈9 ms per frame).
+class MSAAScenePass extends Pass {
+  constructor(scene, camera) {
+    super();
+    this.scene = scene; this.camera = camera; this.needsSwap = false;
+    this.target = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4, stencilBuffer: true });
+    this.copy = new FullScreenQuad(new THREE.ShaderMaterial({ ...CopyShader, uniforms: THREE.UniformsUtils.clone(CopyShader.uniforms), depthTest: false, depthWrite: false }));
+  }
+  setSize(w, h) { this.target.setSize(w, h); }
+  render(renderer, writeBuffer, readBuffer) {
+    renderer.setRenderTarget(this.target);
+    renderer.clear();
+    renderer.render(this.scene, this.camera);
+    this.copy.material.uniforms.tDiffuse.value = this.target.texture;
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    this.copy.render(renderer);
+  }
+}
 function buildComposer() {
-  const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4, stencilBuffer: true });
+  const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 0 });
   composer = new EffectComposer(renderer, rt);
-  composer.addPass(new RenderPass(scene, camera));
+  scenePass = new MSAAScenePass(scene, camera);
+  composer.addPass(scenePass);
   gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
   gtao.blendIntensity = 0.7;
   gtao.normalMaterial.side = THREE.DoubleSide; // Revit triangles aren't consistently wound
@@ -114,7 +141,8 @@ function buildComposer() {
   };
   gtao.restoreVisibility = () => { showAfterAO(); scene.background = skyForAO; };
   composer.addPass(gtao);
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.5, 0.9));
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.5, 0.9);
+  composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
   gradePass = createGradePass(); // colour grade on the final image (per time of day, set in setTime)
   gradePass.setAspect(innerWidth / innerHeight);
@@ -124,6 +152,9 @@ if (quality.high) buildComposer();
 
 // Cuts the building above the selected floor (like a plan cut). Applied globally so AO/shadows respect it too.
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
+// Always on (parked at 1e6 m when nothing is cut): switching clipping on and off changes every material's shader, and
+// the first floor click used to rebuild ~17 shaders at once (a 3–4 s freeze). Staying on keeps the start-up shaders valid.
+renderer.clippingPlanes = [clipPlane];
 const root = new THREE.Group();
 scene.add(root);
 
@@ -227,20 +258,22 @@ const [modelJson, unitsJson] = await Promise.all([fetch("data/model.json").then(
 model = modelJson;
 model.levels.forEach((l, i) => (levelY[i] = l.z));
 // Geometry: compressed 16-bit version if it exists (see tools/pack-geometry.mjs), otherwise the raw Revit export
+async function loadQuantised(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url);
+  const q = new Uint16Array(await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+  const f = new Float32Array(q.length), { min, scale } = model.quant;
+  for (let i = 0; i < q.length; i += 3) { f[i] = min[0] + q[i] * scale[0]; f[i + 1] = min[1] + q[i + 1] * scale[1]; f[i + 2] = min[2] + q[i + 2] * scale[2]; }
+  return f;
+}
 async function loadGeometry() {
   if (model.quant && "DecompressionStream" in window) {
-    try {
-      const r = await fetch("data/geometry.q.bin.gz");
-      if (r.ok) {
-        const q = new Uint16Array(await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
-        const f = new Float32Array(q.length), { min, scale } = model.quant;
-        for (let i = 0; i < q.length; i++) { const a = i % 3; f[i] = min[a] + q[i] * scale[a]; }
-        return f.buffer;
-      }
-    } catch {}
+    try { return (await loadQuantised("data/geometry.q.bin.gz")).buffer; } catch {}
   }
   return fetch("data/geometry.bin").then((r) => r.arrayBuffer());
 }
+// Closed solids for the section caps (see tools/pack-geometry.mjs); loaded alongside the building, optional.
+const capSolids = model.cap && model.quant && "DecompressionStream" in window ? loadQuantised(model.cap.file).catch(() => null) : Promise.resolve(null);
 const geoBuf = await loadGeometry();
 mark("download");
 
@@ -269,19 +302,20 @@ for (const g of model.groups) {
   const src = new Float32Array(geoBuf, g.offset * 4, g.count);
   const pos = new Float32Array(g.count);
   for (let i = 0; i < g.count; i += 3) { pos[i] = src[i]; pos[i + 1] = src[i + 2]; pos[i + 2] = -src[i + 1]; }
-  const key = g.material + "|" + g.level; // one mesh per material per floor
-  if (!byMat.has(key)) byMat.set(key, { name: g.material, chunks: [] });
+  // one mesh per *look* per floor (Revit materials that render identically share a material, see materialFor)
+  const mat = materialFor(g.material, model.materials[g.material]);
+  const key = mat.uuid + "|" + g.level;
+  if (!byMat.has(key)) byMat.set(key, { mat, chunks: [] });
   byMat.get(key).chunks.push(pos);
   if (CAP_CATS.has(g.category)) capChunks.push(pos);
   if (!NO_COLLIDE.has(g.category)) collideChunks.push(pos);
 }
-for (const { name, chunks } of byMat.values()) {
+for (const { mat, chunks } of byMat.values()) {
   const geo = geoFrom(chunks);
   geo.computeVertexNormals();
   addBoxUVs(geo);
-  const mat = materialFor(name, model.materials[name]);
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = !mat.userData.glass;
+  mesh.castShadow = !mat.transparent; // glass and water let the light through
   mesh.receiveShadow = true;
   if (mat.transparent) mesh.renderOrder = 3;
   root.add(track(mesh));
@@ -289,6 +323,14 @@ for (const { name, chunks } of byMat.values()) {
 // Section caps: a hidden copy flips the stencil bit for every surface behind the cut. Where the count is odd
 // the pixel is inside a cut solid, and the cap plane (below) paints it solid. Works whatever the triangle winding.
 // Only drawn while a floor is cut.
+// The visible surfaces were nudged apart by a few mm against flicker; the caps count surfaces, so they use the
+// untouched (watertight) export when it is available.
+const capSrc = await capSolids;
+if (capSrc) {
+  const pos = new Float32Array(capSrc.length);
+  for (let i = 0; i < pos.length; i += 3) { pos[i] = capSrc[i]; pos[i + 1] = capSrc[i + 2]; pos[i + 2] = -capSrc[i + 1]; }
+  capChunks.length = 0; capChunks.push(pos);
+}
 const capMesh = new THREE.Mesh(geoFrom(capChunks), capStencilMat);
 capMesh.renderOrder = 1;
 capMesh.visible = false;
@@ -322,6 +364,7 @@ const REVIT_TO_THREE = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0,
 const toMatrix = (it) => REVIT_TO_THREE.clone().multiply(new THREE.Matrix4().fromArray(it.m));
 const instMatrices = (list) => list.map(toMatrix);
 let fixtureTris = [0, 0];
+const twoSided = new Map(); // one double-sided copy per base material, shared by every fixture part that uses it
 for (const fx of model.fixtures ?? []) {
   const byLevel = Map.groupBy ? Map.groupBy(fx.instances, (it) => it.level) : fx.instances.reduce((m, it) => m.set(it.level, [...(m.get(it.level) ?? []), it]), new Map());
   for (const part of fx.parts) {
@@ -334,7 +377,8 @@ for (const fx of model.fixtures ?? []) {
     addBoxUVs(geo);
     // fixtures include mirrored copies (which flip triangle winding), so they keep both sides
     const base = materialFor(part.material, model.materials[part.material]);
-    const mat = base.side === THREE.DoubleSide ? base : Object.assign(base.clone(), { side: THREE.DoubleSide });
+    if (base.side !== THREE.DoubleSide && !twoSided.has(base)) twoSided.set(base, Object.assign(base.clone(), { side: THREE.DoubleSide }));
+    const mat = base.side === THREE.DoubleSide ? base : twoSided.get(base);
     for (const [, list] of byLevel) {
       const im = new THREE.InstancedMesh(geo, mat, list.length);
       list.forEach((it, i) => im.setMatrixAt(i, toMatrix(it)));
@@ -387,6 +431,21 @@ buildingBox = new THREE.Box3().setFromObject(root);
 const size = buildingBox.getSize(new THREE.Vector3());
 const radius = Math.max(size.x, size.z) * 0.5;
 
+// Keep the orbit point within the site while panning: the building plus a margin of lawn around it (much wider while
+// the real-world map is on), from the ground to just above the roof. When a pan would go past the edge, the camera
+// is moved back by the same amount, so the view simply stops at the edge instead of turning.
+const panLimit = new THREE.Box3(), panPrev = new THREE.Vector3();
+function clampPan() {
+  if (state.inside || state.walking) return;
+  const margin = ready && map.on ? 400 : Math.max(12, radius * 0.6);
+  panLimit.copy(buildingBox).expandByVector(new THREE.Vector3(margin, 0, margin));
+  panLimit.min.y = 0; panLimit.max.y += 3;
+  panPrev.copy(controls.target);
+  controls.target.clamp(panLimit.min, panLimit.max);
+  if (!panPrev.equals(controls.target)) camera.position.add(panPrev.sub(controls.target).negate());
+}
+controls.addEventListener("change", clampPan);
+
 const sc = sun.shadow.camera;
 sc.left = sc.bottom = -radius * 1.4; sc.right = sc.top = radius * 1.4; sc.near = 1; sc.far = radius * 8;
 
@@ -399,7 +458,7 @@ const walker = createWalker({ camera, dom: canvas, geometry: collideGeo, onExit:
 mark("collision");
 
 // ---------- landscape: trees, distant hills, ferns ----------
-const landscape = createLandscape({ scene, buildingBox });
+const landscape = createLandscape({ scene, buildingBox, lite: !quality.high });
 // 3D grass around the building, kept off paving / slabs (anything solid just above the lawn)
 const grassProbe = new THREE.Vector3();
 landscape.addGrass((x, z) => { const h = walker.floorBelow(grassProbe.set(x, 0.5, z)); return !!h && h.y > ground.position.y + 0.04; }, quality.high ? 1 : 0.35);
@@ -409,7 +468,7 @@ mark("grass");
 const map = createMap({ scene, camera, renderer, site: CONFIG.site ?? {}, apiKey: CONFIG.googleMapsKey });
 let mapWanted = false;
 function applyMap() {
-  const cut = renderer.clippingPlanes.length > 0 && !state.walking; // a plan cut would slice the hills, so pause the map
+  const cut = clipPlane.constant < 1e5 && !state.walking; // a plan cut would slice the hills, so pause the map
   const on = mapWanted && !cut;
   const was = map.on;
   map.set(on);
@@ -436,7 +495,11 @@ function refreshShadows() {
   const keep = band;
   showBand();
   renderer.shadowMap.needsUpdate = true;
+  // drawn into the scene's own buffer (the next frame overwrites it), not the screen: a screen render needs a second,
+  // screen-specific version of every shader, which used to be built on the first floor click (a multi-second freeze)
+  renderer.setRenderTarget(scenePass ? scenePass.target : null);
   renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
   showBand(...keep);
 }
 
@@ -579,8 +642,7 @@ const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 // ---------- selection ----------
 function setCut(y) {
   const on = y !== null && y !== undefined;
-  clipPlane.constant = on ? y : 1e6;
-  renderer.clippingPlanes = on ? [clipPlane] : []; // global: applies to every material, shadows and AO
+  clipPlane.constant = on ? y : 1e6; // (the plane is always active; "no cut" just parks it far above the building)
   cap.visible = capMesh.visible = on;
   if (on) cap.position.y = y - 0.002;
   showBand(-Infinity, on ? y : Infinity); // floors entirely above the cut aren't drawn at all
@@ -752,7 +814,8 @@ function renderUI() {
   }
   ui.legend.innerHTML = ["available", "occupied"]
     .map((s) => `<span><i class="dot" style="background:${hex(STATUS_COLOR[s])}"></i>${t(s)}</span>`).join("");
-  ui.hint.textContent = state.inside ? t("hintInside") : state.floor === null ? t("hint") : t("hintFloor");
+  ui.hint.textContent = state.inside ? t("hintInside")
+    : (state.floor === null ? t("hint") : t("hintFloor")) + " · " + t(matchMedia("(pointer: coarse)").matches ? "panTouch" : "panMouse");
   $("insidePhotos").textContent = t("photos");
   $("insidePano").textContent = t("pano360");
   $("insidePano").classList.toggle("hidden", !(state.inside && CONFIG.types[state.inside.type]?.pano));
@@ -994,13 +1057,17 @@ function roomAt(feet) {
 const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 let downAt = null;
+const pickList = [], pickHits = [];
 function pick(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   if (state.inside || state.walking) return null;
-  const targets = state.floor === null ? bands : unitMeshes.filter((m) => m.visible);
-  return ray.intersectObjects(targets, false)[0]?.object;
+  // (the raycaster ignores .visible, so hidden room volumes are skipped here; the list is reused between moves)
+  pickList.length = 0;
+  for (const m of state.floor === null ? bands : unitMeshes) if (m.visible) pickList.push(m);
+  pickHits.length = 0;
+  return ray.intersectObjects(pickList, false, pickHits)[0]?.object;
 }
 canvas.addEventListener("pointerdown", (e) => (downAt = [e.clientX, e.clientY]));
 canvas.addEventListener("pointermove", (e) => {
@@ -1087,16 +1154,21 @@ function openPano(u) {
   pano.unit = u;
   const note = document.getElementById("panoNote");
   note.textContent = "";
-  pano.sphere.material.map = placeholderTexture(`${u.label} · ${L(type?.label) ?? u.type}`);
-  pano.sphere.material.needsUpdate = true;
-  if (type?.pano) {
-    texLoader.load(type.pano, (tex) => {
+  // free the previous room's panorama (up to 7280×3600) before showing the next one
+  const setMap = (tex) => { const old = pano.sphere.material.map; pano.sphere.material.map = tex; pano.sphere.material.needsUpdate = true; if (old && old !== tex) old.dispose(); };
+  const src = type?.pano;
+  const loaded = src && pano.src === src && pano.sphere.material.map?.userData.pano; // same room type again: keep it
+  pano.src = src;
+  if (!loaded) setMap(placeholderTexture(`${u.label} · ${L(type?.label) ?? u.type}`));
+  if (src && !loaded) {
+    texLoader.load(src, (tex) => {
+      if (pano.src !== src) { tex.dispose(); return; } // another room type was opened meanwhile
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = pano.renderer.capabilities.getMaxAnisotropy(); // sharper near the top/bottom
-      pano.sphere.material.map = tex;
-      pano.sphere.material.needsUpdate = true;
+      tex.userData.pano = true;
+      setMap(tex);
     }, undefined, () => (note.textContent = t("placeholder")));
-  } else note.textContent = t("placeholder");
+  } else if (!src) note.textContent = t("placeholder");
   // open facing the room's best side; limit looking up/down (AI-edited panoramas warp at the ceiling and floor)
   pano.lon = type?.panoStart ?? 0; pano.lat = 0; pano.fov = 75; pano.maxLat = type?.panoPitch ?? 85;
   pano.el.classList.remove("hidden");
@@ -1169,7 +1241,7 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-const v = new THREE.Vector3();
+const v = new THREE.Vector3(), v2 = new THREE.Vector3();
 let lastT = performance.now(), roomCheck = 0, creditT = 1, aoModeNow = "";
 const lastCamM = new THREE.Matrix4(), lastCamP = new THREE.Matrix4();
 // Adaptive resolution: while frames come back-to-back (the view is moving), measure the frame interval; if it stays
@@ -1264,8 +1336,9 @@ function frame(now) {
     u.labelEl.style.left = ((v.x + 1) / 2) * innerWidth + "px";
     u.labelEl.style.top = ((1 - v.y) / 2) * innerHeight + "px";
   }
+  if (!pins.length) return;
   const showPins = state.floor === null && !lb.open && !state.walking;
-  const camDir = camera.position.clone().setY(0).normalize();
+  const camDir = v2.copy(camera.position).setY(0).normalize();
   for (const p of pins) {
     p.el.style.opacity = p.dir.dot(camDir) < -0.25 ? 0.3 : 1; // fade pins on the far side of the building
     v.copy(p.pos).project(camera);
@@ -1276,6 +1349,25 @@ function frame(now) {
     p.el.style.top = ((1 - v.y) / 2) * innerHeight + "px";
   }
 }
+// Compile every shader before the first frame without freezing the page (the browser links them in parallel while the
+// loading screen keeps animating). Sky, fog and environment are set first so the compiled variants are the ones used;
+// the target is the one the scene is really drawn into (composer: linear, tone-mapped later; Lite: the screen).
+// The floor-view objects (room volumes and outlines, floor bands, section caps) are hidden at start, so they are shown
+// for the compile and for one warm-up frame (with ambient occlusion) under the loading screen; otherwise the first
+// floor click would still build their shaders.
+env.set("day", radius);
+const floorViewObjects = [...unitMeshes, ...bands, cap, capMesh];
+const wasVisible = floorViewObjects.map((o) => o.visible);
+floorViewObjects.forEach((o) => (o.visible = true));
+try {
+  renderer.setRenderTarget(scenePass ? scenePass.target : null);
+  await renderer.compileAsync(scene, camera);
+  renderer.setRenderTarget(null);
+  if (composer) { gtao.enabled = true; composer.render(0); gtao.enabled = false; } else renderer.render(scene, camera);
+} catch (e) { console.warn("shader pre-compile skipped", e); }
+floorViewObjects.forEach((o, i) => (o.visible = wasVisible[i]));
+renderer.setRenderTarget(null);
+mark("shaders");
 setTime("day");
 env.onHdriReady((name) => setTime(name)); // the sky photo arrived after start-up: switch to it
 window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls };
@@ -1284,3 +1376,5 @@ ready = true;
 if (hero.classList.contains("gone") && !lb.open) introFly();
 requestAnimationFrame(frame);
 ui.loading.classList.add("done");
+// the building is on screen (with each material's average colour): now fetch the photo textures
+setTimeout(startTextureLoading, 50); // (not tied to a drawn frame: a tab opened in the background draws none)

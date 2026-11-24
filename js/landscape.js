@@ -101,7 +101,7 @@ function treeGeometry(kind, seed, lod = 0) {
   return { trunk, canopy: mergeGeometries(cards), center: cy, radius: Math.max(hr, k.h * 0.5) };
 }
 
-export function createLandscape({ scene, buildingBox }) {
+export function createLandscape({ scene, buildingBox, lite = false }) {
   const group = new THREE.Group();
   scene.add(group);
   const r = rng(88);
@@ -165,7 +165,8 @@ export function createLandscape({ scene, buildingBox }) {
           im.setMatrixAt(i, m4.compose(new THREE.Vector3(s.x, -0.25, s.z), q.setFromAxisAngle(up, s.rot), new THREE.Vector3(s.s, s.s, s.s)));
           if (mat === leafMat) im.setColorAt(i, col.setHex(tint[Math.floor(r() * tint.length)]));
         });
-        im.castShadow = true; im.receiveShadow = true;
+        // only the ring around the site can throw a shadow into the sun's ±34 m shadow map; the far rings are left out of it
+        im.castShadow = lod === 0; im.receiveShadow = true;
         im.computeBoundingSphere();
         group.add(im);
         pair.push(im);
@@ -181,7 +182,7 @@ export function createLandscape({ scene, buildingBox }) {
 
   // Hide trees that stand between the camera and the building (closer than the building and overlapping it on screen).
   const corners = [...Array(8)].map(() => new THREE.Vector3()), p = new THREE.Vector3(), e = new THREE.Vector3(), side = new THREE.Vector3();
-  const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+  const hidden = new THREE.Matrix4().makeScale(0, 0, 0), tPos = new THREE.Vector3(), tScale = new THREE.Vector3();
   function updateOcclusion(camera, box, enabled = true) {
     // the building's outline on screen
     let x0 = 1, x1 = -1, y0 = 1, y1 = -1;
@@ -208,7 +209,7 @@ export function createLandscape({ scene, buildingBox }) {
       if (s.meshes && hide !== s.hidden) {
         s.hidden = hide;
         for (const im of s.meshes) {
-          im.setMatrixAt(s.index, hide ? hidden : m4.compose(new THREE.Vector3(s.x, -0.25, s.z), q.setFromAxisAngle(up, s.rot), new THREE.Vector3(s.s, s.s, s.s)));
+          im.setMatrixAt(s.index, hide ? hidden : m4.compose(tPos.set(s.x, -0.25, s.z), q.setFromAxisAngle(up, s.rot), tScale.setScalar(s.s)));
           changed.add(im);
         }
       }
@@ -242,8 +243,13 @@ export function createLandscape({ scene, buildingBox }) {
     along(b.min.x - o, b.min.z - o, b.max.x + o, b.min.z - o);
     along(b.min.x - o, b.min.z - o, b.min.x - o, b.max.z + o);
     along(b.max.x + o, b.min.z - o, b.max.x + o, b.max.z + o);
-    for (const mesh of meshes) {
-      const im = new THREE.InstancedMesh(mesh.geometry, mesh.material, places.length);
+    // The file holds 4 fern variants side by side (≈2,400 / 2,250 / 780 / 820 triangles); each spot gets all four as a
+    // small clump. Lite (phones): the two heavy variants are drawn with the light ones' shapes (same clump, ~half the triangles).
+    const tris = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
+    const light = meshes.filter((m) => tris(m.geometry) < 1500).map((m) => m.geometry);
+    meshes.forEach((mesh, k) => {
+      const geo = lite && light.length && tris(mesh.geometry) >= 1500 ? light[k % light.length] : mesh.geometry;
+      const im = new THREE.InstancedMesh(geo, mesh.material, places.length);
       places.forEach(([x, z], i) => {
         const s = 0.9 + r() * 0.6;
         m4.compose(new THREE.Vector3(x, -0.25, z), q.setFromAxisAngle(up, r() * Math.PI * 2), new THREE.Vector3(s, s, s)).multiply(mesh.matrixWorld);
@@ -251,7 +257,7 @@ export function createLandscape({ scene, buildingBox }) {
       });
       im.castShadow = im.receiveShadow = true;
       group.add(im);
-    }
+    });
   });
 
   // --- 3D grass blades in a band around the building (the flat lawn texture continues beyond it) ---

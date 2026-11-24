@@ -16,13 +16,14 @@ export const TIMES = {
   // sunElev overrides the sun height found in the photo; skyDesat / skyHaze control how pale the visible sky is;
   // fill = sky-blue from above + green bounce from the lawn; roomGlow = warm lit ceilings seen through the windows.
   // neutral: use the "PBR Neutral" tone curve, which keeps whites white and the sky blue (AgX greys them out in sun)
-  day:    { hdri: "assets/sky/autumn_field_puresky_2k.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xfff3e6, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.7, skyHaze: 0.8, fill: [0xffe9cc, 0xc0a878, 0.36],
+  // (1k versions of the 2k Poly Haven photos, made with tools/shrink-hdr.mjs: a quarter of the download, same look)
+  day:    { hdri: "assets/sky/autumn_field_puresky_1k.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xfff3e6, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.7, skyHaze: 0.8, fill: [0xffe9cc, 0xc0a878, 0.36],
             roomGlow: 0.8, lamps: 0.35, glow: 0.0,
             // indoors: neutral studio-room light + cool daylight through the window, lamps dimmed (they're "on" but daylight wins)
             roomEnv: 0.3, window: [0xeef3ff, 4],
             // colours matched by measurement to the client's elevation render: cream plaster, light honey timber, olive lawn
             grade: { gain: 0.955, contrast: 1.08, saturation: 1.0, lift: 0.03, warm: [1.0, 0.99, 0.97], cool: [1.03, 1.0, 0.95], vignette: 0.18 }, ground: 0x7d7847, fogDensity: 0.0036, elev: 48, turbidity: 3, rayleigh: 1.2 },
-  golden: { hdri: "assets/sky/kloppenheim_06_puresky_2k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
+  golden: { hdri: "assets/sky/kloppenheim_06_puresky_1k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
             fill: [0xfff4e6, 0x9a8a72, 0.09], roomEnv: 0.22, window: [0xffcf9a, 2.5], skyDesat: 0.2, skyHaze: 0.5, roomGlow: 0.9, lamps: 0.9, glow: 0.4,
             grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },
   night:  { elev: 28, sunAz: 300, sun: 0x8ea6ff, sunI: 3.5, env: 5, bg: 1, exposure: 0.75, roomEnv: 0.08, window: [0x9fb2ff, 0.3], roomGlow: 1.4, grade: { contrast: 1.04, vignette: 0.3 }, lamps: 1.6, glow: 1.0, ground: 0x6f7f66, fog: 0x141a28, fogDensity: 0.0045, night: true },
@@ -42,16 +43,21 @@ export function createEnvironment(renderer, scene) {
   skyScene.add(sky);
   const nightSphere = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), new THREE.MeshBasicMaterial({ map: nightTexture(), side: THREE.BackSide, depthWrite: false }));
   skyScene.add(nightSphere);
-  const cubeRT = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType });
+  // 256 per face = the same environment-map size the 1k sky photos produce (1024 / 4), so the shaders compiled with
+  // this stand-in sky stay valid when the photo arrives (a different size would rebuild every shader once)
+  const cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
   const cubeCam = new THREE.CubeCamera(1, 2000, cubeRT);
   skyScene.add(cubeCam);
 
-  // ---- HDRI skies (loaded in the background; used as soon as they arrive) ----
-  const hdris = {};
+  // ---- HDRI skies: each one is downloaded the first time its time of day is chosen (the site opens in daytime, so the
+  // golden-hour sky, 2.8 MB, is only fetched if someone picks it); until it arrives the procedural sky stands in ----
+  const hdris = {}, requested = new Set();
   const loader = new RGBELoader();
   let onReady = null;
-  for (const [name, t] of Object.entries(TIMES)) {
-    if (!t.hdri) continue;
+  function requestHdri(name) {
+    const t = TIMES[name];
+    if (!t?.hdri || requested.has(name)) return;
+    requested.add(name);
     loader.load(t.hdri, (tex) => {
       tex.mapping = THREE.EquirectangularReflectionMapping;
       const a = analyse(tex);
@@ -73,6 +79,7 @@ export function createEnvironment(renderer, scene) {
   function set(name, r = radius) {
     radius = r;
     const t = TIMES[name]; current = name;
+    requestHdri(name);
     const h = hdris[name];
     envRT?.dispose();
     if (h) {
@@ -141,7 +148,7 @@ function analyse(tex) {
   const px = (i) => (half ? THREE.DataUtils.fromHalfFloat(data[i]) : data[i]);
   const ch = data.length / (w * h);
   let best = -1, bi = 0;
-  for (let y = 0; y < h / 2; y++) for (let x = 0; x < w; x += 2) {
+  for (let y = 0; y < h / 2; y += 2) for (let x = 0; x < w; x += 2) { // the sun disc is ~10 px wide: every 2nd row is enough
     const i = (y * w + x) * ch, l = px(i) * 0.2126 + px(i + 1) * 0.7152 + px(i + 2) * 0.0722;
     if (l > best) { best = l; bi = y * w + x; }
   }
@@ -169,25 +176,30 @@ function paleSky(tex, t, a) {
   const half = data instanceof Uint16Array;
   const ch = data.length / (w * h);
   const get = (i) => (half ? THREE.DataUtils.fromHalfFloat(data[i]) : data[i]);
-  const out = new data.constructor(data.length);
+  // The displayed sky is at most 1024 wide (a 2k photo is sampled every 2nd pixel and row): these are cloudless
+  // "pure sky" photos, so it looks the same on screen and the per-pixel work stays small.
+  const step = w > 1024 ? 2 : 1;
+  const W = w / step, H = h / step;
+  const out = new data.constructor(W * H * ch);
   // clamp: the sun in the photo can exceed what a 16-bit float holds (it would become "infinity")
   const put = half ? (i, v) => (out[i] = THREE.DataUtils.toHalfFloat(Math.min(v, 30000))) : (i, v) => (out[i] = Math.min(v, 30000));
   // haze colour: horizon brightness, nearly white with a hint of warmth
   const hb = (() => { let s = 0, n = 0; const y = Math.floor(h * 0.48); for (let x = 0; x < w; x += 8) { const i = (y * w + x) * ch; s += get(i) * 0.2126 + get(i + 1) * 0.7152 + get(i + 2) * 0.0722; n++; } return (s / n) * 1.25; })();
   const hz = [hb * 1.6, hb * 1.68, hb * 1.75]; // brighter than the photo's horizon, very slightly blue-white
-  for (let y = 0; y < h; y++) {
-    const lat = (0.5 - (y + 0.5) / h) * Math.PI; // radians above the horizon
+  const avg = (x, y, c) => get((y * step * w + x * step) * ch + c);
+  for (let y = 0; y < H; y++) {
+    const lat = (0.5 - (y + 0.5) / H) * Math.PI; // radians above the horizon
     const k = lat <= 0 ? haze : haze * Math.exp(-lat / 0.22); // fades out by ~25° up
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * ch;
-      let r = get(i), g = get(i + 1), b = get(i + 2);
+    for (let x = 0; x < W; x++) {
+      const o = (y * W + x) * ch;
+      let r = avg(x, y, 0), g = avg(x, y, 1), b = avg(x, y, 2);
       const L = r * 0.2126 + g * 0.7152 + b * 0.0722;
       r += (L - r) * desat; g += (L - g) * desat; b += (L - b) * desat;
-      put(i, r + (hz[0] - r) * k); put(i + 1, g + (hz[1] - g) * k); put(i + 2, b + (hz[2] - b) * k);
-      if (ch === 4) out[i + 3] = data[i + 3];
+      put(o, r + (hz[0] - r) * k); put(o + 1, g + (hz[1] - g) * k); put(o + 2, b + (hz[2] - b) * k);
+      if (ch === 4) out[o + 3] = data[(y * step * w + x * step) * ch + 3];
     }
   }
-  const bg = new THREE.DataTexture(out, w, h, tex.format, tex.type);
+  const bg = new THREE.DataTexture(out, W, H, tex.format, tex.type);
   bg.mapping = THREE.EquirectangularReflectionMapping;
   bg.colorSpace = tex.colorSpace; bg.flipY = tex.flipY;
   bg.minFilter = bg.magFilter = THREE.LinearFilter; bg.generateMipmaps = false;
