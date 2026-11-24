@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>STIN 88A · Interactive</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+        "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js",
+        "3d-tiles-renderer/three": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.5.4/build/index.three.js",
+        "3d-tiles-renderer/plugins": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.5.4/build/index.plugins.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="scene"></canvas>
+    <div id="labels"></div>
+
+    <header class="brand">
+      <div class="logo" id="projectName">STIN 88A</div>
+      <div class="tag" id="tagline"></div>
+    </header>
+
+    <aside class="panel floors">
+      <button class="overview-btn" id="overviewBtn"></button>
+      <div class="panel-title" data-i18n="floors"></div>
+      <div id="floorList"></div>
+      <div id="roomList"></div>
+      <div class="legend" id="legend"></div>
+    </aside>
+
+    <section id="card" class="panel card hidden" aria-live="polite"></section>
+
+    <aside id="photoRail" class="photo-rail hidden" aria-label="Renders of this space"></aside>
+
+    <div id="insideBar" class="panel inside-bar hidden">
+      <div id="insideTitle"></div>
+      <button id="insidePhotos" class="chip"></button>
+      <button id="insidePano" class="chip hidden"></button>
+      <button id="insideWalk" class="chip"></button>
+      <button id="insideExit" class="chip"></button>
+    </div>
+
+    <div id="walkHud" class="walk-hud">
+      <div class="walk-top">
+        <div id="walkFloors"></div>
+        <button id="walkExit" class="chip"></button>
+      </div>
+      <button id="walkRoom" class="chip walk-room" style="display:none"></button>
+      <div id="walkHint" class="hint walk-hint"></div>
+      <div class="crosshair"></div>
+    </div>
+
+    <div class="toolbar">
+      <button id="mapBtn" class="chip"></button>
+      <button id="walkBtn" class="chip"></button>
+      <button id="qualityBtn" class="chip"></button>
+      <button id="galleryBtn" class="chip"></button>
+      <button id="dayNight" class="chip"></button>
+      <button id="langBtn" class="chip"></button>
+    </div>
+
+    <div id="hint" class="hint"></div>
+    <div id="mapCredit" class="map-credit"></div>
+    <div id="tooltip" class="tooltip hidden"></div>
+
+    <div id="loading"><div class="spinner"></div><div id="loadingText">Loading…</div></div>
+
+    <section id="hero">
+      <img id="heroImg" alt="" />
+      <div class="hero-text">
+        <h1 id="heroTitle"></h1>
+        <p id="heroTag"></p>
+        <div class="hero-actions">
+          <button id="heroExplore" class="btn-hero primary"></button>
+          <button id="heroGallery" class="btn-hero"></button>
+        </div>
+      </div>
+    </section>
+
+    <div id="lightbox" class="hidden" role="dialog" aria-modal="true">
+      <img id="lbImg" alt="" />
+      <div class="lb-top">
+        <div><div id="lbTitle"></div><div id="lbCount"></div></div>
+        <div class="lb-actions"><button id="lbAngle" class="chip"></button><button id="lbClose" class="chip"></button></div>
+      </div>
+      <div id="lbTabs"></div>
+      <button id="lbPrev" class="lb-nav prev" aria-label="Previous">‹</button>
+      <button id="lbNext" class="lb-nav next" aria-label="Next">›</button>
+      <div id="lbThumbs"></div>
+    </div>
+
+    <div id="pano" class="hidden" role="dialog" aria-modal="true">
+      <canvas id="panoCanvas"></canvas>
+      <div class="pano-top">
+        <div id="panoTitle"></div>
+        <span>
+          <button id="panoWalk" class="chip"></button>
+          <button id="panoClose" class="chip"></button>
+        </span>
+      </div>
+      <div id="panoNote"></div>
+      <div class="pano-hint" data-i18n="drag"></div>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
