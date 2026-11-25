@@ -1,0 +1,16 @@
+{
+ "LM_K305": {
+  "ao": {
+   "png": "LM_K305_ao.png",
+   "file": "lm/LM_K305_ao.ktx2",
+   "size": 2048
+  },
+  "day": {
+   "png": "LM_K305_day.png",
+   "file": "lm/LM_K305_day.ktx2",
+   "scale": 0.11146,
+   "sun": true,
+   "size": 2048
+  }
+ }
+}

@@ -172,11 +172,19 @@ body.inside .floors, body.inside .card, body.inside .brand { display: none; }
 body.walking .walk-hud { display: block; }
 body.walking .floors, body.walking .card, body.walking #labels, body.walking > #app > .hint:not(.walk-hint), body.walking #insideBar { display: none !important; }
 .walk-top { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
-#walkFloors { display: flex; gap: 6px; }
+/* floor menu: opens when the stairs or the lift are clicked */
+#walkFloors { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30; flex-direction: column;
+  gap: 8px; padding: 16px; min-width: 200px; background: var(--panel, rgba(255,255,255,0.96)); border: 1px solid var(--panel-border, #ddd);
+  border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.18); }
+#walkFloors.open { display: flex; }
+#walkFloors .menu-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+#walkFloors .chip { justify-content: center; }
 .chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 .walk-room { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); }
 .walk-hint { bottom: 70px; }
-.crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,0.8); box-shadow: 0 0 0 1px rgba(0,0,0,0.3); pointer-events: none; }
+/* aiming dot while the mouse is captured (the walk view is on white, so it is dark) */
+.crosshair { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: rgba(30,30,30,0.75); box-shadow: 0 0 0 1.5px rgba(255,255,255,0.9); pointer-events: none; display: none; }
+body.walking.locked .crosshair { display: block; }
 @media (max-width: 720px) {
   .walk-top { top: 92px; left: 12px; right: 12px; transform: none; }
   .walk-room { top: 136px; }

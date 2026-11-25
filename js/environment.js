@@ -17,12 +17,14 @@ export const TIMES = {
   // fill = sky-blue from above + green bounce from the lawn; roomGlow = warm lit ceilings seen through the windows.
   // neutral: use the "PBR Neutral" tone curve, which keeps whites white and the sky blue (AgX greys them out in sun)
   // (1k versions of the 2k Poly Haven photos, made with tools/shrink-hdr.mjs: a quarter of the download, same look)
-  day:    { hdri: "assets/sky/autumn_field_puresky_1k.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xfff3e6, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.7, skyHaze: 0.8, fill: [0xffe9cc, 0xc0a878, 0.36],
+  day:    { hdri: "assets/sky/autumn_field_puresky_1k.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xfff3e6, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.15, skyHaze: 0.25, fill: [0xe4ecf4, 0x7f8a6c, 0.36],
+            // (exterior render: pale blue sky #C5D7E4, white plaster, neutral grey shade - so a cool sky fill and a
+            // green-grey lawn bounce instead of the old yellow one, which turned the plaster peach)
             roomGlow: 0.8, lamps: 0.35, glow: 0.0,
             // indoors: neutral studio-room light + cool daylight through the window, lamps dimmed (they're "on" but daylight wins)
             roomEnv: 0.3, window: [0xeef3ff, 4],
             // colours matched by measurement to the client's elevation render: cream plaster, light honey timber, olive lawn
-            grade: { gain: 0.955, contrast: 1.08, saturation: 1.0, lift: 0.03, warm: [1.0, 0.99, 0.97], cool: [1.03, 1.0, 0.95], vignette: 0.18 }, ground: 0x7d7847, fogDensity: 0.0036, elev: 48, turbidity: 3, rayleigh: 1.2 },
+            grade: { gain: 0.955, contrast: 1.08, saturation: 1.0, lift: 0.03, warm: [1.0, 0.99, 0.97], cool: [1.03, 1.0, 0.95], vignette: 0.18 }, ground: 0x4a5a2c, fogDensity: 0.0036, elev: 48, turbidity: 3, rayleigh: 1.2 },
   golden: { hdri: "assets/sky/kloppenheim_06_puresky_1k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
             fill: [0xfff4e6, 0x9a8a72, 0.09], roomEnv: 0.22, window: [0xffcf9a, 2.5], skyDesat: 0.2, skyHaze: 0.5, roomGlow: 0.9, lamps: 0.9, glow: 0.4,
             grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },
@@ -121,19 +123,28 @@ export function createEnvironment(renderer, scene) {
   }
   // Light levels per time of day. A TIMES entry may add `inside: { sunI, env, fill, exposure }` to override them while
   // walking / inside a room (none needed now that ambient occlusion works properly).
-  let inside = false;
+  let inside = false, plain = 0;
+  const PLAIN = { env: 0.9, fill: 1.35, exposure: 1.0, sky: new THREE.Color(0xffffff), ground: new THREE.Color(0xd8d4cc) };
+  const baseSky = new THREE.Color(), baseGround = new THREE.Color();
   function applyLevels() {
     const t = TIMES[current]; if (!t) return;
     const o = inside ? t.inside ?? {} : {};
-    scene.environment = inside && t.roomEnv ? roomEnv : envRT?.texture ?? null;
-    scene.environmentIntensity = inside && t.roomEnv ? t.roomEnv : o.env ?? t.env;
-    renderer.toneMappingExposure = o.exposure ?? t.exposure;
-    sun.intensity = o.sunI ?? t.sunI;
-    fill.intensity = o.fill ?? (t.fill ? t.fill[2] : t.night ? 0.12 : 0.25);
+    const roomLight = (inside && t.roomEnv) || plain > 0.5;
+    scene.environment = roomLight ? roomEnv : envRT?.texture ?? null;
+    const env0 = inside && t.roomEnv ? t.roomEnv : o.env ?? t.env;
+    scene.environmentIntensity = THREE.MathUtils.lerp(env0, PLAIN.env, plain);
+    renderer.toneMappingExposure = THREE.MathUtils.lerp(o.exposure ?? t.exposure, PLAIN.exposure, plain);
+    sun.intensity = (o.sunI ?? t.sunI) * (1 - plain);
+    fill.intensity = THREE.MathUtils.lerp(o.fill ?? (t.fill ? t.fill[2] : t.night ? 0.12 : 0.25), PLAIN.fill, plain);
+    baseSky.set(t.fill ? t.fill[0] : 0xfff4e6); baseGround.set(t.fill ? t.fill[1] : 0x9a8a72);
+    fill.color.copy(baseSky).lerp(PLAIN.sky, plain); fill.groundColor.copy(baseGround).lerp(PLAIN.ground, plain);
   }
   function setInside(on) { if (on !== inside) { inside = on; applyLevels(); } }
+  // Plain "studio" light for the floor / room / walk views: no sun (so no sun shadows), an even white sky light and a
+  // neutral room reflection. k blends from the time-of-day light (0) to plain light (1), for the fade while flying.
+  function setPlain(k) { if (k !== plain) { plain = k; applyLevels(); } }
   return {
-    sun, fill, set, setInside,
+    sun, fill, set, setInside, setPlain, get plain() { return plain; },
     get current() { return current; }, get time() { return TIMES[current]; },
     // called when a sky photo finishes loading after the time was already chosen
     onHdriReady(cb) { onReady = cb; },

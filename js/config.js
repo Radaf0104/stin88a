@@ -113,7 +113,9 @@ export const CONFIG = {
 
   // Shared spaces shown as clickable volumes (matched to Revit rooms by name). "gallery" + "start" = which photos open.
   spaces: [
+    // pano / panoStart / panoPitch: optional 360° view, same as for the room types above
     { room: "AREA KOMUNAL", label: { en: "Communal living & dining", id: "Ruang bersama" }, gallery: "shared", start: 0, zone: "living",
+      pano: "images/pano/lobby_l1.webp", panoStart: 180, panoPitch: 45,
       text: { en: "Shared lounge, dining table and terrace for all residents.", id: "Ruang santai, meja makan dan teras untuk semua penghuni." } },
     { room: "OPEN LIVING ROOM", label: { en: "Private villa", id: "Villa pribadi" }, gallery: "villa", start: 0,
       text: { en: "The owner's private villa with its own pool courtyard.", id: "Villa pribadi pemilik dengan taman kolam sendiri." } },

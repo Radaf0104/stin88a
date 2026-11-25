@@ -54,7 +54,8 @@ function limb(a, b, r0, r1, seg = 6) {
 
 // A tree = trunk + one branch per leaf cluster + crossed leaf cards grouped in clusters.
 // Each card gets a vertex colour: darker inside the crown and underneath, lighter on the sunlit outside.
-// lod 1 = distant version: 40 % of the cards, a bit bigger.
+// lod 1 = distant version: 40 % of the cards, a bit bigger, simpler trunk (fewer sides, 3 main branches).
+// lod 2 = horizon version (110 m+): 20 % of the cards, bigger again, a plain trunk.
 function treeGeometry(kind, seed, lod = 0) {
   const k = KINDS[kind], r = rng(seed);
   const cy = k.h * k.cy, vr = k.w * k.flat * 0.55, hr = k.w * 0.6;
@@ -67,11 +68,13 @@ function treeGeometry(kind, seed, lod = 0) {
   // trunk and branches
   const base = new THREE.Vector3(0, 0, 0), fork = new THREE.Vector3(0, cy - vr * 0.7, 0);
   const tr = 0.045 + k.h * 0.009; // trunk radius at the fork (≈ 20–30 cm diameter at the base)
-  const parts = [limb(base, fork, tr * 1.4, tr), new THREE.CylinderGeometry(tr * 1.8, tr * 1.4, 0.3, 7, 1, true).translate(0, 0.15, 0).toNonIndexed()];
-  for (const cl of clusters) parts.push(limb(fork, cl.c.clone().lerp(fork, 0.25), tr * 0.6, tr * 0.25, 5));
+  const parts = [limb(base, fork, tr * 1.4, tr, lod ? 4 : 6)];
+  if (lod === 0) parts.push(new THREE.CylinderGeometry(tr * 1.8, tr * 1.4, 0.3, 7, 1, true).translate(0, 0.15, 0).toNonIndexed());
+  const branches = lod === 0 ? clusters : lod === 1 ? clusters.slice(0, 3) : [];
+  for (const cl of branches) parts.push(limb(fork, cl.c.clone().lerp(fork, 0.25), tr * 0.6, tr * 0.25, lod ? 3 : 5));
   const trunk = mergeGeometries(parts.map((g) => { g.deleteAttribute("uv"); return g; }));
 
-  const n = Math.round(k.cards * (lod ? 0.4 : 1)), sizeK = lod ? 1.45 : 1;
+  const n = Math.round(k.cards * [1, 0.4, 0.2][lod]), sizeK = [1, 1.45, 1.9][lod];
   const cards = [], tmp = new THREE.Vector3(), nrm = new THREE.Vector3();
   const maxR = Math.max(hr, vr) * 1.4;
   for (let i = 0; i < n; i++) {
@@ -148,13 +151,13 @@ export function createLandscape({ scene, buildingBox, lite = false }) {
   //       ring (m)    count  scale      lod  spacing  rain/round/tall/young
   tryPlace(12, 45,      60,  0.85, 1.25,  0,  5.5,    [3, 3.5, 2, 2]);   // around the site
   tryPlace(45, 110,    130,  1.0,  1.6,   1,  5,      [3, 3, 2.5, 1]);   // further out
-  tryPlace(110, 175,   170,  1.3,  2.1,   1,  4.2,    [3, 3, 3, 0]);     // dense tree line on the horizon
+  tryPlace(110, 175,   170,  1.3,  2.1,   2,  4.2,    [3, 3, 3, 0]);     // dense tree line on the horizon
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
   const tint = [0xffffff, 0xf2f6dc, 0xe4ecd2, 0xf6efd2, 0xd6e0c6]; // per-tree colour variation (fresh / yellowish / darker)
   const col = new THREE.Color();
   KIND_NAMES.forEach((kind, ki) => {
-    for (const lod of [0, 1]) {
+    for (const lod of [0, 1, 2]) {
       const mine = spots.filter((s) => s.kind === ki && s.lod === lod);
       if (!mine.length) continue;
       const geo = treeGeometry(kind, 11 + ki * 7, lod);
@@ -215,7 +218,13 @@ export function createLandscape({ scene, buildingBox, lite = false }) {
       }
     }
     for (const im of changed) im.instanceMatrix.needsUpdate = true;
+    // grass: full blades near the camera, the sparse clump further away (where single blades can't be told apart)
+    for (const t of grassTiles) {
+      const far = t.center.distanceTo(camera.position) > GRASS_NEAR;
+      if (far !== t.far) { t.far = far; t.im.geometry = far ? t.low : t.high; }
+    }
   }
+  const grassTiles = [], GRASS_NEAR = 30;
 
   // --- distant hills (fade into the haze) ---
   const hills = new THREE.RingGeometry(230, 520, 96, 6).rotateX(-Math.PI / 2);
@@ -244,11 +253,11 @@ export function createLandscape({ scene, buildingBox, lite = false }) {
     along(b.min.x - o, b.min.z - o, b.min.x - o, b.max.z + o);
     along(b.max.x + o, b.min.z - o, b.max.x + o, b.max.z + o);
     // The file holds 4 fern variants side by side (≈2,400 / 2,250 / 780 / 820 triangles); each spot gets all four as a
-    // small clump. Lite (phones): the two heavy variants are drawn with the light ones' shapes (same clump, ~half the triangles).
+    // small clump. The two heavy variants are drawn with the light ones' shapes: the same clumps, half the triangles.
     const tris = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
     const light = meshes.filter((m) => tris(m.geometry) < 1500).map((m) => m.geometry);
     meshes.forEach((mesh, k) => {
-      const geo = lite && light.length && tris(mesh.geometry) >= 1500 ? light[k % light.length] : mesh.geometry;
+      const geo = light.length && tris(mesh.geometry) >= 1500 ? light[k % light.length] : mesh.geometry;
       const im = new THREE.InstancedMesh(geo, mesh.material, places.length);
       places.forEach(([x, z], i) => {
         const s = 0.9 + r() * 0.6;
@@ -265,12 +274,15 @@ export function createLandscape({ scene, buildingBox, lite = false }) {
   // so tiles outside the view are skipped. isBlocked(x, z) says whether there's paving / a slab at that spot.
   const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85 });
   grassMat.userData.noAO = true; // thousands of thin blades would turn the lawn dark in the AO pass
-  function clumpGeometry() {
+  // sparse = the far version: every 3rd blade, 1.8× wider, so a patch keeps about the same colour and coverage
+  function clumpGeometry(sparse = false) {
     const rr = rng(404), pos = [], col = [], nor = [];
-    const root = new THREE.Color(0x455321), tipA = new THREE.Color(0x8a903e), tipB = new THREE.Color(0xa8a25a); // warm olive, dry tips
+    // deep, fresh green like the exterior render (it reads #3A4623 in sun there; the old olive read yellow-green)
+    const root = new THREE.Color(0x26331a), tipA = new THREE.Color(0x4c6a2c), tipB = new THREE.Color(0x637a36);
     for (let i = 0; i < 44; i++) {
       const a = rr() * Math.PI * 2, d = Math.sqrt(rr()) * 0.55, x = Math.cos(a) * d, z = Math.sin(a) * d;
-      const h = 0.1 + rr() * 0.2, w = 0.012 + rr() * 0.01, face = rr() * Math.PI;
+      const h = 0.1 + rr() * 0.2, w = (0.012 + rr() * 0.01) * (sparse ? 1.8 : 1), face = rr() * Math.PI;
+      if (sparse && i % 3) { rr(); rr(); rr(); continue; } // (same random sequence, so the kept blades match the full clump)
       const fx = Math.cos(face) * w, fz = Math.sin(face) * w;
       const lean = 0.25 + rr() * 0.4, la = rr() * Math.PI * 2;
       const tip = tipA.clone().lerp(tipB, rr());
@@ -285,7 +297,7 @@ export function createLandscape({ scene, buildingBox, lite = false }) {
     return g;
   }
   function addGrass(isBlocked, density = 1) {
-    const clump = clumpGeometry(), rr = rng(77);
+    const clump = clumpGeometry(), clumpFar = clumpGeometry(true), rr = rng(77);
     const area = buildingBox.clone().expandByVector(new THREE.Vector3(20, 0, 20));
     area.max.z += 6; // a little more lawn in front of the terrace facade
     const TILE = 12, tiles = new Map();
@@ -306,6 +318,7 @@ export function createLandscape({ scene, buildingBox, lite = false }) {
       im.computeBoundingSphere();
       im.receiveShadow = true;
       group.add(im);
+      grassTiles.push({ im, center: im.boundingSphere.center.clone(), high: clump, low: clumpFar, far: false });
       blades += list.length * 44;
     }
     return blades;

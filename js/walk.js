@@ -12,7 +12,8 @@ export function createWalker({ camera, dom, geometry, onExit }) {
   let yaw = 0, pitch = 0, onGround = false, active = false;
   const keys = new Set();
   const seg = new THREE.Line3(), box = new THREE.Box3(), triPt = new THREE.Vector3(), capPt = new THREE.Vector3();
-  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), moveV = new THREE.Vector3();
+  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), moveV = new THREE.Vector3(), prevPos = new THREE.Vector3();
+  let allow = null; // (x, z) => may the player stand here? (set by the room-by-room walk)
   const downRay = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, -1, 0));
   const touch = { move: null, look: null, mx: 0, my: 0 };
 
@@ -74,6 +75,7 @@ export function createWalker({ camera, dom, geometry, onExit }) {
     if (move.lengthSq() > 1) move.normalize();
     vel.x = move.x * speed; vel.z = move.z * speed;
     vel.y = onGround ? -1 : vel.y - 9.8 * dt;
+    prevPos.copy(pos);
     pos.addScaledVector(vel, dt);
 
     // capsule vs triangles: push out of anything closer than the radius
@@ -92,6 +94,12 @@ export function createWalker({ camera, dom, geometry, onExit }) {
     const delta = tmp.subVectors(seg.start, pos);
     onGround = delta.y > Math.abs(dt * vel.y * 0.25);
     pos.copy(seg.start);
+    // stay inside the space you are in (plus open doorways): slide along its edge instead of stopping dead
+    if (allow && !allow(pos.x, pos.z)) {
+      if (allow(pos.x, prevPos.z)) pos.z = prevPos.z;
+      else if (allow(prevPos.x, pos.z)) pos.x = prevPos.x;
+      else { pos.x = prevPos.x; pos.z = prevPos.z; }
+    }
     if (onGround) vel.y = 0;
     if (pos.y < -20) respawn(); // fell off the world
     camera.position.set(pos.x, pos.y + EYE, pos.z);
@@ -117,7 +125,7 @@ export function createWalker({ camera, dom, geometry, onExit }) {
   addEventListener("keydown", (e) => { if (active && e.key === "Escape" && document.pointerLockElement !== dom) onExit?.(); });
 
   return {
-    start, stop, step, teleport,
+    start, stop, step, teleport, setAllow(fn) { allow = fn; },
     get active() { return active; },
     get feet() { return new THREE.Vector3(pos.x, pos.y - SEG - RADIUS, pos.z); },
     get yaw() { return yaw; },

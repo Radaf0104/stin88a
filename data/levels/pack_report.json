@@ -1,0 +1,71 @@
+{
+ "levels": [
+  {
+   "L": "L0",
+   "gltf": 23,
+   "bin": 103,
+   "meshes": 5,
+   "nodes": 5,
+   "tris": 4334
+  },
+  {
+   "L": "L1",
+   "gltf": 460,
+   "bin": 3467,
+   "meshes": 101,
+   "nodes": 128,
+   "tris": 171185
+  },
+  {
+   "L": "L2",
+   "gltf": 567,
+   "bin": 2401,
+   "meshes": 130,
+   "nodes": 181,
+   "tris": 129138
+  },
+  {
+   "L": "L3",
+   "gltf": 752,
+   "bin": 2565,
+   "meshes": 183,
+   "nodes": 250,
+   "tris": 131334
+  },
+  {
+   "L": "L4",
+   "gltf": 611,
+   "bin": 2006,
+   "meshes": 152,
+   "nodes": 215,
+   "tris": 105254
+  },
+  {
+   "L": "ROOF",
+   "gltf": 40,
+   "bin": 483,
+   "meshes": 9,
+   "nodes": 9,
+   "tris": 24405
+  },
+  {
+   "L": "SITE",
+   "gltf": 12,
+   "bin": 78,
+   "meshes": 3,
+   "nodes": 3,
+   "tris": 5000
+  }
+ ],
+ "textures_kb": 6427,
+ "lightmaps": [
+  {
+   "file": "lm/LM_K305_ao.ktx2",
+   "kb": 230
+  },
+  {
+   "file": "lm/LM_K305_day.ktx2",
+   "kb": 180
+  }
+ ]
+}

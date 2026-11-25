@@ -14,7 +14,9 @@ import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
 import { createWalker } from "./walk.js";
 import { createMap } from "./map.js";
-import { createGradePass } from "./grade.js";
+import { createGrade, createSky } from "./grade.js";
+import { createIsolation } from "./isolate.js";
+import { createSpaces } from "./spaces.js";
 
 // ---------- text ----------
 const STR = {
@@ -28,13 +30,13 @@ const STR = {
     placeholder: "Placeholder — the 360° render from Unreal will appear here", loading: "Loading 3D model…", lang: "ID",
     explore: "Explore in 3D", renders: "Gallery",
     nSpaces: (n) => `${n} shared spaces`, stepIn: "Step inside", photos: "Photos", exitRoom: "← Exit room",
-    panMouse: "right-drag to move the view", panTouch: "two fingers to move the view",
+    panMouse: "right-drag to move the view", panTouch: "two fingers to move the view", goTo: "Go to floor",
     hintInside: "Drag to look around", roomPhotos: "Room photos", seeAngle: "See this angle in 3D", back: "Back to 3D",
     time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", walk: "🚶 Walk", hq: "HQ", lite: "Lite",
     exitWalk: "✕ Exit walk", walkHere: "🚶 Walk around", bath: "bathroom",
     mapOn: "🌍 Map", mapOff: "🌿 Lawn", mapNoKey: "The real-world map needs a Google Maps API key: add googleMapsKey in js/config.js.",
-    walkHintMouse: "Click to look around · WASD / arrows to move · Shift to run · Esc to release the mouse",
-    walkHintTouch: "Left thumb: move · Right thumb: look",
+    walkHintMouse: "Click to look around · WASD / arrows to move · click a door to open it · click the stairs or lift to change floor · Esc releases the mouse",
+    walkHintTouch: "Left thumb: move · Right thumb: look · tap a door to open it · tap the stairs or lift to change floor",
   },
   id: {
     overview: "Tampilan gedung", floors: "Lantai", available: "Tersedia", occupied: "Terisi",
@@ -46,13 +48,13 @@ const STR = {
     placeholder: "Contoh — render 360° dari Unreal akan tampil di sini", loading: "Memuat model 3D…", lang: "EN",
     explore: "Jelajahi 3D", renders: "Galeri",
     nSpaces: (n) => `${n} ruang bersama`, stepIn: "Masuk ke kamar", photos: "Foto", exitRoom: "← Keluar",
-    panMouse: "klik kanan + geser untuk menggeser tampilan", panTouch: "dua jari untuk menggeser tampilan",
+    panMouse: "klik kanan + geser untuk menggeser tampilan", panTouch: "dua jari untuk menggeser tampilan", goTo: "Pergi ke lantai",
     hintInside: "Geser untuk melihat sekeliling", roomPhotos: "Foto kamar", seeAngle: "Lihat sudut ini di 3D", back: "Kembali ke 3D",
     time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", walk: "🚶 Jalan", hq: "HQ", lite: "Ringan",
     exitWalk: "✕ Selesai", walkHere: "🚶 Jalan-jalan", bath: "kamar mandi",
     mapOn: "🌍 Peta", mapOff: "🌿 Taman", mapNoKey: "Peta dunia nyata butuh API key Google Maps: isi googleMapsKey di js/config.js.",
-    walkHintMouse: "Klik untuk melihat · WASD / panah untuk berjalan · Shift untuk lari · Esc melepas mouse",
-    walkHintTouch: "Jempol kiri: jalan · Jempol kanan: lihat",
+    walkHintMouse: "Klik untuk melihat · WASD / panah untuk berjalan · klik pintu untuk membuka · klik tangga atau lift untuk pindah lantai · Esc melepas mouse",
+    walkHintTouch: "Jempol kiri: jalan · Jempol kanan: lihat · ketuk pintu untuk membuka · ketuk tangga atau lift untuk pindah lantai",
   },
 };
 let lang = CONFIG.defaultLanguage;
@@ -62,10 +64,9 @@ const L = (obj) => (obj && typeof obj === "object" ? obj[lang] ?? obj.en : obj);
 
 const STATUS_COLOR = { available: 0x2fb57a, occupied: 0xe0443e }; // green / red
 
-// ---------- quality (High = AO + bloom + big shadows; Lite for phones) ----------
-const isPhone = matchMedia("(pointer: coarse)").matches || Math.min(innerWidth, innerHeight) < 600;
-const quality = { high: !isPhone };
-try { const q = localStorage.getItem("stin-quality"); if (q) quality.high = q === "high"; } catch {}
+// ---------- quality: always the full look (AO + bloom + big shadows); the Lite mode and its button were removed ----------
+const quality = { high: true };
+try { localStorage.removeItem("stin-quality"); } catch {}
 
 // ---------- scene ----------
 const canvas = document.getElementById("scene");
@@ -148,7 +149,17 @@ function buildComposer() {
   gradePass.setAspect(innerWidth / innerHeight);
   composer.addPass(gradePass);
 }
-if (quality.high) buildComposer();
+// No post-processing: the scene is drawn straight to the screen (with the browser's own edge smoothing). The colour
+// grade that used to be a full-screen pass now runs at the end of every material (grade.js), and the sky photo is
+// drawn as an object so it is graded too. (Bloom and ambient occlusion were post effects and are gone.)
+const grade = createGrade();
+const sky = createSky(renderer);
+scene.add(sky.mesh);
+function renderScene() { // draw one frame to the screen
+  sky.update(scene);
+  renderer.render(scene, camera);
+  sky.restore(scene);
+}
 
 // Cuts the building above the selected floor (like a plan cut). Applied globally so AO/shadows respect it too.
 const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
@@ -274,7 +285,11 @@ async function loadGeometry() {
 }
 // Closed solids for the section caps (see tools/pack-geometry.mjs); loaded alongside the building, optional.
 const capSolids = model.cap && model.quant && "DecompressionStream" in window ? loadQuantised(model.cap.file).catch(() => null) : Promise.resolve(null);
-const geoBuf = await loadGeometry();
+// ?model=glb: the Blender-prepared building (data/levels/*.gltf, textured, with baked light) instead of the raw
+// Revit triangles. Without it, everything below runs exactly as before.
+// (the default since V5; ?model=old shows the raw Revit geometry, data/geometry.q.bin.gz, as before)
+const USE_GLB = new URLSearchParams(location.search).get("model") !== "old";
+const geoBuf = USE_GLB ? null : await loadGeometry();
 mark("download");
 
 // Building geometry: Revit (x, y, z up) -> three.js (x, y up, -y)
@@ -298,27 +313,113 @@ const geoFrom = (chunks) => {
 const levelObjects = [];
 const track = (obj) => { obj.geometry.computeBoundingBox(); const b = obj.geometry.boundingBox; obj.userData.y = [b.min.y, b.max.y]; levelObjects.push(obj); return obj; };
 const byMat = new Map(), capChunks = [], collideChunks = [];
-for (const g of model.groups) {
+for (const g of USE_GLB ? [] : model.groups) {
   const src = new Float32Array(geoBuf, g.offset * 4, g.count);
   const pos = new Float32Array(g.count);
   for (let i = 0; i < g.count; i += 3) { pos[i] = src[i]; pos[i + 1] = src[i + 2]; pos[i + 2] = -src[i + 1]; }
   // one mesh per *look* per floor (Revit materials that render identically share a material, see materialFor)
   const mat = materialFor(g.material, model.materials[g.material]);
   const key = mat.uuid + "|" + g.level;
-  if (!byMat.has(key)) byMat.set(key, { mat, chunks: [] });
+  if (!byMat.has(key)) byMat.set(key, { mat, chunks: [], meta: [] });
   byMat.get(key).chunks.push(pos);
+  byMat.get(key).meta.push({ category: g.category, level: g.level });
   if (CAP_CATS.has(g.category)) capChunks.push(pos);
   if (!NO_COLLIDE.has(g.category)) collideChunks.push(pos);
 }
-for (const { mat, chunks } of byMat.values()) {
+const doorChunks = []; // where each door's triangles sit inside the merged meshes (see spaces.js)
+const ceilingChunks = [], tvChunks = []; // ceilings (hidden in the room view) and TVs (clickable there)
+// Bathroom parts (Revit "Plumbing Fixtures") go last in each mesh, so the building overview can stop drawing just
+// before them (they can't be seen from outside); the floor / room / walk views draw everything.
+const BATHROOM_CATS = new Set(["Plumbing Fixtures"]);
+const buildingMeshes = [];
+for (const entry of byMat.values()) {
+  const order = entry.chunks.map((c, i) => i).sort((a, b) => BATHROOM_CATS.has(entry.meta[a].category) - BATHROOM_CATS.has(entry.meta[b].category));
+  const chunks = order.map((i) => entry.chunks[i]), meta = order.map((i) => entry.meta[i]), mat = entry.mat;
   const geo = geoFrom(chunks);
   geo.computeVertexNormals();
   addBoxUVs(geo);
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.overviewVerts = chunks.reduce((a, c, i) => a + (BATHROOM_CATS.has(meta[i].category) ? 0 : c.length), 0) / 3;
+  buildingMeshes.push(mesh);
+  let at = 0;
+  chunks.forEach((c, i) => {
+    const ch = { mesh, start: at, count: c.length, level: meta[i].level };
+    if (meta[i].category === "Doors") doorChunks.push(ch);
+    else if (meta[i].category === "Ceilings") ceilingChunks.push(ch);
+    else if (meta[i].category === "Communication Devices") tvChunks.push(ch);
+    at += c.length;
+  });
   mesh.castShadow = !mat.transparent; // glass and water let the light through
   mesh.receiveShadow = true;
   if (mat.transparent) mesh.renderOrder = 3;
   root.add(track(mesh));
+}
+// ---------- ?model=glb: the Blender levels (tools/blender/*, tools/pack-levels.mjs) ----------
+// Each level file is in root-local coordinates already (Revit x, z, -y), so it goes straight under `root`.
+// Object extras (glTF) arrive as userData: kind (shell / ceiling / stair / railing / doorframe / door / bed / tv ...),
+// level, collide, bathroom, tv, room, lm_set, door_width / door_slide / door_wide_axis.
+const doorLeaves = [], ceilingObjs = [], tvObjs = [], glbLightmapped = [];
+let lightmapManifest = {};
+const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF", "SITE"];
+if (USE_GLB) {
+  const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
+    import("three/addons/loaders/GLTFLoader.js"), import("three/addons/loaders/KTX2Loader.js"), import("three/addons/libs/meshopt_decoder.module.js")]);
+  const ktx2 = new KTX2Loader().setTranscoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/basis/").detectSupport(renderer);
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2);
+  lightmapManifest = await fetch("data/levels/lightmaps.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  const lmCache = new Map();
+  const lmTex = (file, srgb) => {
+    if (!lmCache.has(file)) lmCache.set(file, ktx2.loadAsync("data/levels/" + file).then((t) => {
+      t.channel = 1; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.flipY = false; return t; }).catch(() => null));
+    return lmCache.get(file);
+  };
+  // site shaders by material name (glass with Fresnel, frosted glass, water)
+  const OVERRIDE = { M_glass_clear: "Glazing-Clear", M_glass_frosted: "GLAZINGfrosty", M_water: "Water" };
+  const gltfs = await Promise.all(GLB_LEVELS.map((L) => loader.loadAsync(`data/levels/${L}.gltf`).catch((e) => { console.warn("level", L, e); return null; })));
+  const box = new THREE.Box3(), m4 = new THREE.Matrix4(), v3 = new THREE.Vector3();
+  for (const gltf of gltfs) {
+    if (!gltf) continue;
+    root.add(gltf.scene);
+    gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const ud = o.userData.kind ? o.userData : o.parent?.userData ?? {};   // multi-material nodes: extras on the parent
+      Object.assign(o.userData, { ...ud, ...o.userData });
+      const name = o.material?.name;
+      if (OVERRIDE[name]) o.material = materialFor(OVERRIDE[name], {});
+      o.castShadow = !o.material.transparent; o.receiveShadow = true;
+      if (o.material.transparent) o.renderOrder = 3;
+      box.setFromObject(o);
+      o.userData.y = [box.min.y, box.max.y];
+      if (ud.kind === "door") { const leaf = o.parent?.userData?.kind === "door" ? o.parent : o; if (!doorLeaves.includes(leaf)) doorLeaves.push(leaf); return; }
+      levelObjects.push(o);
+      if (ud.kind === "ceiling") ceilingObjs.push(o);
+      if (ud.kind === "tv") tvObjs.push(o);
+      if (["shell", "ceiling", "stair", "railing", "doorframe"].includes(ud.kind)) { o.userData.overviewVerts = Infinity; buildingMeshes.push(o); }
+      // walk-mode collision: root-local, non-indexed triangles (as the Revit path builds them)
+      if (ud.collide) {
+        const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+        const p = g.attributes.position, out = new Float32Array(p.count * 3);
+        m4.copy(o.matrixWorld);
+        for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m4); out[i * 3] = v3.x; out[i * 3 + 1] = v3.y; out[i * 3 + 2] = v3.z; }
+        collideChunks.push(out);
+      }
+      if (ud.lm_set && lightmapManifest[ud.lm_set] && o.geometry.attributes.uv1) { o.material = o.material.clone(); glbLightmapped.push(o); }
+    });
+  }
+  // lightmaps: one per lightmap set and time of day (falls back to any time that was baked); AO on the same UVs
+  window.applyLightmaps = async (time) => {
+    for (const o of glbLightmapped) {
+      const e = lightmapManifest[o.userData.lm_set]; const t = e[time] ?? e.day ?? e.golden ?? e.night;
+      if (!t) continue;
+      const [lm, ao] = await Promise.all([lmTex(t.file, true), e.ao ? lmTex(e.ao.file, false) : null]);
+      o.material.lightMap = lm; o.material.lightMapIntensity = (TIMES[time]?.lightmap ?? 1) / t.scale;
+      if (ao) { o.material.aoMap = ao; o.material.aoMapIntensity = TIMES[time]?.aoMap ?? 1; }
+      o.material.needsUpdate = true;
+    }
+    invalidate(300);
+  };
+  timings.glb = `${gltfs.filter(Boolean).length} levels, ${levelObjects.length} meshes, ${doorLeaves.length} door leaves, ${glbLightmapped.length} lightmapped`;
 }
 // Section caps: a hidden copy flips the stencil bit for every surface behind the cut. Where the count is odd
 // the pixel is inside a cut solid, and the cap plane (below) paints it solid. Works whatever the triangle winding.
@@ -365,7 +466,7 @@ const toMatrix = (it) => REVIT_TO_THREE.clone().multiply(new THREE.Matrix4().fro
 const instMatrices = (list) => list.map(toMatrix);
 let fixtureTris = [0, 0];
 const twoSided = new Map(); // one double-sided copy per base material, shared by every fixture part that uses it
-for (const fx of model.fixtures ?? []) {
+for (const fx of USE_GLB ? [] : model.fixtures ?? []) {
   const byLevel = Map.groupBy ? Map.groupBy(fx.instances, (it) => it.level) : fx.instances.reduce((m, it) => m.set(it.level, [...(m.get(it.level) ?? []), it]), new Map());
   for (const part of fx.parts) {
     const raw = new Float32Array(geoBuf, part.offset * 4, part.count);
@@ -385,6 +486,7 @@ for (const fx of model.fixtures ?? []) {
       im.castShadow = im.receiveShadow = true;
       im.computeBoundingBox();
       im.userData.y = [im.boundingBox.min.y, im.boundingBox.max.y];
+      im.userData.bathroom = true; // toilets, showers, basins: hidden in the building overview
       levelObjects.push(im);
       root.add(im);
     }
@@ -393,7 +495,7 @@ for (const fx of model.fixtures ?? []) {
 timings.fixtureTriangles = `${Math.round(fixtureTris[0])} -> ${Math.round(fixtureTris[1])} per set`;
 mark("fixtures");
 // Office chairs: the Revit family is ~355k triangles each, so a simple stand-in chair is drawn in its place.
-for (const px of model.proxies ?? []) {
+for (const px of USE_GLB ? [] : model.proxies ?? []) {
   const parts = [
     new THREE.BoxGeometry(0.5, 0.48, 0.07).translate(0, 0, 0.47),          // seat (Revit axes: z up)
     new THREE.BoxGeometry(0.48, 0.06, 0.5).translate(0, 0.22, 0.78),        // back
@@ -472,7 +574,7 @@ function applyMap() {
   const on = mapWanted && !cut;
   const was = map.on;
   map.set(on);
-  ground.visible = landscape.group.visible = !on; // Google's tiles bring their own ground and trees
+  ground.visible = landscape.group.visible = !on && isoK < 1; // Google's tiles bring their own ground and trees; white views have none
   if (on) scene.fog = null; // real surroundings: no fake haze
   else if (was && env.current) env.set(env.current, radius); // restore sky haze
   camera.far = on ? 30000 : 800; camera.updateProjectionMatrix();
@@ -488,7 +590,16 @@ renderer.shadowMap.autoUpdate = false;
 let band = [-Infinity, Infinity];
 function showBand(lo = -Infinity, hi = Infinity) {
   band = [lo, hi];
-  for (const o of levelObjects) o.visible = o.userData.y[1] >= lo && o.userData.y[0] <= hi;
+  for (const o of levelObjects) o.visible = o.userData.y[1] >= lo && o.userData.y[0] <= hi && !o.userData.hidden;
+  // from outside (building overview) the doors inside the building can't be seen: don't draw them
+  const outside = state.floor === null && !state.walking;
+  if (outside) try { for (const d of spaces.doors) if (d.interior) d.pivot.visible = false; } catch {} // (spaces not built yet)
+  // nor the bathrooms: their fittings (instanced) and the Revit plumbing at the end of each building mesh
+  for (const o of levelObjects) if (outside && o.userData.bathroom) o.visible = false;
+  for (const m of buildingMeshes) {
+    m.geometry.setDrawRange(0, outside ? m.userData.overviewVerts : Infinity);
+    if (outside && !m.userData.overviewVerts) m.visible = false;
+  }
 }
 // Re-render the sun's shadow map with the whole (cut) building present, so hidden floors still cast shadows.
 function refreshShadows() {
@@ -498,7 +609,7 @@ function refreshShadows() {
   // drawn into the scene's own buffer (the next frame overwrites it), not the screen: a screen render needs a second,
   // screen-specific version of every shader, which used to be built on the first floor click (a multi-second freeze)
   renderer.setRenderTarget(scenePass ? scenePass.target : null);
-  renderer.render(scene, camera);
+  renderScene();
   renderer.setRenderTarget(null);
   showBand(...keep);
 }
@@ -556,6 +667,15 @@ for (const u of units) {
   u.center = u.box.getCenter(new THREE.Vector3());
   if (u.bathMesh) u.bathCenter = new THREE.Box3().setFromObject(u.bathMesh, true).getCenter(new THREE.Vector3());
 }
+
+// ---------- isolation (floor / room / walk views) and the walkable spaces with their doors ----------
+const iso = createIsolation();
+iso.setBounds(buildingBox, 6);
+const probeRay = new THREE.Ray();
+const spaces = createSpaces({ model, units, levelY, root, buildingBox, doorChunks, doorLeaves: USE_GLB ? doorLeaves : null,
+  probe: (o, dir, min, max) => { const h = walker.raycastAll(probeRay.set(o, dir)).find((x) => x.distance > min); return h && h.distance < max ? h.distance : null; } });
+for (const d of spaces.doors) { d.pivot.userData.y = [d.box.min.y, d.box.max.y]; levelObjects.push(d.pivot); } // drawn per floor like the rest
+timings.doors = `${spaces.doors.length} doors (${spaces.doors.filter((d) => d.role === "entrance").length} entrance, ${spaces.doors.filter((d) => d.role === "inside").length} inside)`;
 
 // Mood-light anchors: bedroom lamps, bathroom lights, corridor bays, shared spaces
 for (const u of units) {
@@ -640,21 +760,64 @@ controls.addEventListener("start", () => { if (tween?.done) { camera.position.co
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
 // ---------- selection ----------
-function setCut(y) {
+function setCut(y, caps = true) {
   const on = y !== null && y !== undefined;
   clipPlane.constant = on ? y : 1e6; // (the plane is always active; "no cut" just parks it far above the building)
-  cap.visible = capMesh.visible = on;
+  cap.visible = capMesh.visible = on && caps;
   if (on) cap.position.y = y - 0.002;
-  showBand(-Infinity, on ? y : Infinity); // floors entirely above the cut aren't drawn at all
+  // floors entirely above the cut aren't drawn at all (nor, once faded to white, the ones below the isolated floor)
+  showBand(isoK >= 1 && on && state.floor !== null ? levelY[state.floor] - 0.6 : -Infinity, on ? y : Infinity);
   applyMap();
-  refreshShadows();
+  if (isoK < 0.5) refreshShadows(); // plain light has no sun, so no shadows to update
 }
 
+// ---------- isolated views: the outside melts to white and the light turns plain while the camera flies in ----------
+// isoK 0 = the full scene (sky, landscape, sun, shadows, ambient occlusion, bloom), 1 = only the masked part on white
+// with plain even light. Everything here only changes numbers (no shader rebuilds), so it can be animated.
+const WHITE_BG = new THREE.Color(1.6, 1.6, 1.6); // > 1 so it stays pure white after the tone curve
+let isoK = 0, isoAnim = null, savedSky = null;
+function setIsoK(k) {
+  if (k > 0 && !savedSky) savedSky = { bg: scene.background, intensity: scene.backgroundIntensity, fog: scene.fog?.density ?? 0 };
+  isoK = k;
+  iso.fade = k;
+  env.setPlain(k);
+  const tm = env.time ?? {};
+  mood.setFactor((tm.lamps ?? 1) * (1 - k));
+  if (bloomPass) bloomPass.enabled = k === 0;
+  grade.enabled = k < 0.5; // plain white views: no grade (as before)
+  grade.bloom = k === 0;    // nor the bloom brightening (bloom was off there too)
+  if (savedSky) {
+    if (k >= 1) scene.background = WHITE_BG;
+    else { scene.background = savedSky.bg; scene.backgroundIntensity = savedSky.intensity * (1 + 14 * k * k); } // sky washes out to white
+    if (scene.fog) scene.fog.density = savedSky.fog * (1 - k);
+  }
+  const outsideOn = k < 1 && !map.on;
+  ground.visible = landscape.group.visible = outsideOn; // fully faded: not drawn at all
+  // fully faded: the floors under the isolated one aren't drawn either (they were only being dissolved)
+  if (!state.walking && state.floor !== null) showBand(k >= 1 ? levelY[state.floor] - 0.6 : -Infinity, clipPlane.constant);
+  if (k === 0 && savedSky) { savedSky = null; refreshShadows(); }
+  invalidate(100);
+}
+function animateIso(to, dur = 1.1) {
+  if (to === isoK && !isoAnim) return;
+  isoAnim = { from: isoK, to, s: performance.now(), d: dur * 1000 };
+}
+
+// The isolated views start just under the floor surface: the slab edges and the beams hanging under it would
+// otherwise show as grey strips under the walls and floor.
+const FLOOR_DEPTH = 0.03;
+function floorView(level) { // section box around one floor: the whole footprint, from just under its slab to the cut
+  iso.setMask(spaces.footprint(), 0, levelY[level] - FLOOR_DEPTH);
+  controls.minDistance = 6;
+}
 function selectFloor(level, fly = true) {
   if (state.inside) leaveInside();
+  clearRoomView();
   state.floor = level;
   state.unit = null;
   const on = level !== null;
+  if (on) floorView(level);
+  animateIso(on ? 1 : 0);
   setCut(on ? levelY[level] + 1.35 : null);
   for (const m of unitMeshes) { m.visible = on && m.userData.unit.level === level; styleUnit(m.userData.unit); }
   for (const b of bands) b.visible = !on;
@@ -731,7 +894,7 @@ function enterRoom(u) {
   $("insideTitle").textContent = u.kind === "space" ? L(u.space.label) : `${u.label} · ${L(CONFIG.types[u.type]?.label) ?? ""}`;
   insideBar.classList.remove("hidden");
   $("insidePano").textContent = t("pano360");
-  $("insidePano").classList.toggle("hidden", !CONFIG.types[u.type]?.pano);
+  $("insidePano").classList.toggle("hidden", !panoOf(u)?.pano);
   document.body.classList.add("inside");
   ui.hint.textContent = t("hintInside");
   updateRail();
@@ -759,15 +922,161 @@ $("insidePano").onclick = () => state.inside && openPano(state.inside); // 360°
 $("insideExit").onclick = () => state.inside && exitRoom();
 addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && state.inside && !lb.open && !pano.open) exitRoom(); });
 
+// Room view: only this room (with its bathroom and balcony) on white, cut just under the ceiling, to turn around.
+const planToWorld = (pts) => pts.map(([x, y]) => [x + root.position.x, -y + root.position.z]);
 function selectUnit(u) {
-  if (state.inside || state.floor !== u.level) selectFloor(u.level, false); // also restores the floor cut after "inside"
+  if (state.inside || state.floor !== u.level) selectFloor(u.level, false);
+  clearRoomView();
   state.unit = u;
-  units.forEach(styleUnit);
-  for (const m of unitMeshes) m.visible = m.userData.unit.level === u.level;
-  const far = u.kind === "space" ? 1.6 : 1;
-  flyTo(new THREE.Vector3(u.center.x + 9 * far, u.center.y + 16 * far, u.center.z + 13 * far), u.center);
+  const sp = spaces.unitSpace(u);
+  // only this room: its outline grown by one wall thickness (0.15 m), so the neighbours' floors and walls stay out
+  iso.setMask(sp ? sp.mask : [planToWorld(u.outline)], 0.16, levelY[u.level] - FLOOR_DEPTH);
+  animateIso(1);
+  setCut(levelY[u.level] + 3.2); // section 3.2 m above the floor; the ceiling itself is hidden (setCeilings)
+  setRoomView(u, sp);
+  for (const m of unitMeshes) m.visible = false;
+  // look in from above the corridor side, slightly diagonal
+  const b = u.box, size = Math.max(b.max.x - b.min.x, b.max.z - b.min.z), d = size * 1.5 + 7;
+  const target = u.center.clone(); target.y = levelY[u.level] + 1;
+  controls.minDistance = 2;
+  flyTo(new THREE.Vector3(target.x + d * 0.55, target.y + d * 0.95, target.z + d * 0.75), target, 1.2);
   showCard(u);
   renderUI();
+}
+
+// ---------- room view extras: doll's-house cutaway, no ceilings, clickable TV and doors ----------
+let roomView = null; // { u, sp, inner: room + bathroom box, outer: + balcony, floorY, tvs }
+// Ceilings: their triangles are collapsed in place while a room is shown (and put back after), like the door leaves
+let ceilSaved = null, ceilHidden = false;
+function setCeilings(show) {
+  if (USE_GLB) { for (const o of ceilingObjs) { o.userData.hidden = !show; o.visible = show; } ceilHidden = !show; return; }
+  if (show === !ceilHidden) return;
+  ceilHidden = !show;
+  ceilSaved ??= ceilingChunks.map((ch) => ch.mesh.geometry.attributes.position.array.slice(ch.start, ch.start + ch.count));
+  ceilingChunks.forEach((ch, i) => {
+    const a = ch.mesh.geometry.attributes.position;
+    if (show) a.array.set(ceilSaved[i], ch.start); else a.array.fill(0, ch.start, ch.start + ch.count);
+    a.addUpdateRange(ch.start, ch.count); a.needsUpdate = true;
+  });
+}
+// TVs ("Communication Devices" in Revit) of a room: one screen per room, found once from the triangles in the room
+const tvCache = new Map();
+function tvOf(u) {
+  if (tvCache.has(u)) return tvCache.get(u);
+  if (USE_GLB) { // the TV objects standing in this room (their bounding box, world coordinates)
+    const b = new THREE.Box3(), c = new THREE.Vector3();
+    const tv = tvObjs.find((o) => { b.setFromObject(o); b.getCenter(c); return Math.abs(c.y - levelY[u.level] - 1.3) < 1.2 && inPoly(c.x - root.position.x, -(c.z - root.position.z), u.outline); });
+    const res = tv ? makeTv(u, new THREE.Box3().setFromObject(tv)) : null; tvCache.set(u, res); return res;
+  }
+  const fy = levelY[u.level], box = new THREE.Box3(), rp = root.position;
+  let n = 0;
+  for (const ch of tvChunks) {
+    if (ch.level !== u.level) continue;
+    const a = ch.mesh.geometry.attributes.position.array;
+    for (let i = ch.start; i < ch.start + ch.count; i += 9) {
+      const cx = (a[i] + a[i + 3] + a[i + 6]) / 3, cy = (a[i + 1] + a[i + 4] + a[i + 7]) / 3, cz = (a[i + 2] + a[i + 5] + a[i + 8]) / 3;
+      if (cy + rp.y < fy + 0.3 || cy + rp.y > fy + 2.3) continue;
+      if (!inPoly(cx, -cz, u.outline)) continue; // (mesh coordinates -> Revit plan)
+      for (let v = 0; v < 9; v += 3) box.expandByPoint(new THREE.Vector3(a[i + v], a[i + v + 1], a[i + v + 2]).add(rp));
+      n++;
+    }
+  }
+  let tv = null;
+  const s = box.getSize(new THREE.Vector3());
+  if (n && Math.max(s.x, s.z) > 0.45 && s.y > 0.25 && Math.min(s.x, s.z) < 0.3) tv = makeTv(u, box);
+  tvCache.set(u, tv);
+  return tv;
+}
+// The picture on the screen: a streaming app's home page, drawn once
+let tvTexture = null;
+function streamingTexture() {
+  if (tvTexture) return tvTexture;
+  const cv = document.createElement("canvas"); cv.width = 640; cv.height = 360;
+  const g = cv.getContext("2d");
+  g.fillStyle = "#141414"; g.fillRect(0, 0, 640, 360);
+  const hero = g.createLinearGradient(0, 0, 640, 220);
+  hero.addColorStop(0, "#3b1d12"); hero.addColorStop(0.55, "#7a2e1a"); hero.addColorStop(1, "#1d2c44");
+  g.fillStyle = hero; g.fillRect(0, 0, 640, 220);
+  const fade = g.createLinearGradient(0, 120, 0, 220); fade.addColorStop(0, "rgba(20,20,20,0)"); fade.addColorStop(1, "#141414");
+  g.fillStyle = fade; g.fillRect(0, 120, 640, 100);
+  g.fillStyle = "#e50914"; g.font = "bold 34px Arial Black, Arial, sans-serif"; g.fillText("NETFLIX", 26, 52);
+  g.fillStyle = "#fff"; g.font = "bold 30px Arial, sans-serif"; g.fillText("Tonight's Pick", 26, 140);
+  g.fillStyle = "#fff"; g.fillRect(26, 158, 86, 28); g.fillStyle = "#000"; g.font = "bold 15px Arial"; g.fillText("▶  Play", 40, 178);
+  g.fillStyle = "rgba(109,109,110,0.8)"; g.fillRect(122, 158, 110, 28); g.fillStyle = "#fff"; g.fillText("ⓘ  More Info", 132, 178);
+  const tiles = ["#8c3b2e", "#2e5b8c", "#6b8c2e", "#8c6b2e", "#5b2e8c", "#2e8c7a", "#8c2e5b"];
+  g.font = "bold 14px Arial"; g.fillStyle = "#e5e5e5"; g.fillText("Trending Now", 26, 222);
+  for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) {
+    g.fillStyle = tiles[(i + r * 3) % tiles.length]; g.fillRect(26 + i * 102, 232 + r * 64, 94, 54);
+  }
+  tvTexture = new THREE.CanvasTexture(cv); tvTexture.colorSpace = THREE.SRGBColorSpace;
+  return tvTexture;
+}
+function makeTv(u, box) {
+  const s = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const thin = s.x < s.z ? "x" : "z", wide = thin === "x" ? "z" : "x";
+  const face = Math.sign(u.center[thin] - c[thin]) || 1; // the screen faces into the room
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(s[wide] * 0.95, s.y * 0.9),
+    new THREE.MeshBasicMaterial({ map: streamingTexture(), toneMapped: false, fog: false }));
+  screen.position.copy(c); screen.position[thin] += face * (s[thin] / 2 + 0.006);
+  screen.rotation.y = thin === "x" ? face * Math.PI / 2 : face > 0 ? 0 : Math.PI;
+  screen.visible = false;
+  iso.patch(screen.material); // cut away with the wall it hangs on
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(s.x + 0.04, s.y + 0.04, s.z + 0.04), new THREE.MeshBasicMaterial({ visible: false }));
+  hit.position.copy(c);
+  scene.add(screen, hit);
+  const tv = { screen, hit, on: false };
+  hit.userData.tv = screen.userData.tv = tv;
+  return tv;
+}
+function setRoomView(u, sp) {
+  const inner = new THREE.Box3(), outer = new THREE.Box3(), p = new THREE.Vector3();
+  const polys = sp ? sp.walk : [planToWorld(u.outline)];
+  polys.forEach((poly, i) => { for (const [x, z] of poly) { p.set(x, 0, z); outer.expandByPoint(p); if (i < (u.bath ? 2 : 1)) inner.expandByPoint(p); } });
+  const tv = u.kind === "space" ? null : tvOf(u);
+  roomView = { u, sp, inner, outer, floorY: levelY[u.level], tv };
+  setCeilings(false);
+  iso.uniforms.uIsoCutY.value = levelY[u.level] + 0.05; // the walls in front go down to just above the floor
+  updateRoomCut();
+}
+function clearRoomView() {
+  if (!roomView) return;
+  if (roomView.tv) { roomView.tv.on = false; roomView.tv.screen.visible = false; }
+  roomView = null;
+  iso.uniforms.uIsoCutA.value.set(0, 0, 0, 0); iso.uniforms.uIsoCutB.value.set(0, 0, 0, 0); iso.uniforms.uIsoCutY.value = 1e6;
+  setCeilings(true);
+  spaces.closeAll();
+  invalidate(100);
+}
+// The walls between the camera and the room (and whatever hangs on them) are cut away: a strip along each side of
+// the room the camera is beyond, from 0.3 m inside the room to past the wall (or the balcony railing).
+function updateRoomCut() {
+  const { inner, outer } = roomView, c = camera.position, m = 0.4, inset = 0.3;
+  const A = iso.uniforms.uIsoCutA.value.set(0, 0, 0, 0), B = iso.uniforms.uIsoCutB.value.set(0, 0, 0, 0);
+  if (c.x > inner.max.x) A.set(inner.max.x - inset, outer.min.z - m, outer.max.x + m, outer.max.z + m);
+  else if (c.x < inner.min.x) A.set(outer.min.x - m, outer.min.z - m, inner.min.x + inset, outer.max.z + m);
+  if (c.z > inner.max.z) B.set(outer.min.x - m, inner.max.z - inset, outer.max.x + m, outer.max.z + m);
+  else if (c.z < inner.min.z) B.set(outer.min.x - m, outer.min.z - m, outer.max.x + m, inner.min.z + inset);
+}
+// What can be clicked in the room view: the room's doors and its TV
+const roomRay = new THREE.Raycaster();
+function roomPick(e) {
+  if (!roomView || state.walking || state.inside) return null;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  roomRay.setFromCamera(ndc, camera);
+  const list = [];
+  for (const d of roomView.sp?.doors ?? []) for (const m of (d.pivot.isMesh ? [d.pivot] : d.pivot.children)) { m.userData.door = d; list.push(m); }
+  if (roomView.tv) list.push(roomView.tv.hit);
+  return roomRay.intersectObjects(list, false).find((h) => h.point.y < clipPlane.constant) ?? null;
+}
+function roomClick(e) {
+  const h = roomPick(e);
+  if (!h) return false;
+  const tv = h.object.userData.tv;
+  if (tv) { tv.on = !tv.on; tv.screen.visible = tv.on; }
+  else spaces.toggle(h.object.userData.door, roomView.u.center);
+  invalidate(800);
+  return true;
 }
 
 function styleUnit(u) {
@@ -818,19 +1127,22 @@ function renderUI() {
     : (state.floor === null ? t("hint") : t("hintFloor")) + " · " + t(matchMedia("(pointer: coarse)").matches ? "panTouch" : "panMouse");
   $("insidePhotos").textContent = t("photos");
   $("insidePano").textContent = t("pano360");
-  $("insidePano").classList.toggle("hidden", !(state.inside && CONFIG.types[state.inside.type]?.pano));
+  $("insidePano").classList.toggle("hidden", !(state.inside && panoOf(state.inside)?.pano));
   $("insideExit").textContent = t("exitRoom");
   if (state.inside) $("insideTitle").textContent = state.inside.kind === "space" ? L(state.inside.space.label)
     : `${state.inside.label} · ${L(CONFIG.types[state.inside.type]?.label) ?? ""}`;
   ui.dayNight.textContent = t("time_" + (env.current ?? "day"));
+  ui.dayNight.style.display = state.floor === null && !state.walking ? "" : "none"; // floor / room views have plain light
   $("walkBtn").textContent = t("walk");
   $("mapBtn").textContent = mapWanted ? t("mapOff") : t("mapOn");
-  $("qualityBtn").textContent = quality.high ? t("hq") : t("lite");
   $("walkExit").textContent = t("exitWalk");
   $("walkHint").textContent = matchMedia("(pointer: fine)").matches ? t("walkHintMouse") : t("walkHintTouch");
   $("insideWalk").textContent = t("walkHere");
-  $("walkFloors").innerHTML = CONFIG.floors.slice().reverse()
-    .map((f) => `<button class="chip${state.walkLevel === f.level ? " on" : ""}" data-l="${f.level}">${L(f.label)}</button>`).join("");
+  $("walkFloors").innerHTML = `<div class="menu-title">${t("goTo")}</div>` + CONFIG.floors.slice().sort((a, b) => b.level - a.level) // top floor first
+    .map((f) => `<button class="chip${state.walkLevel === f.level ? " on" : ""}" data-l="${f.level}">${L(f.label)}</button>`).join("") +
+    `<button class="chip" data-close>${t("close")}</button>`;
+  // Walk is offered in the floor view (start at the stairs) and on a room's card (start at its entrance)
+  $("walkBtn").style.display = state.floor !== null && !state.unit && !state.walking ? "" : "none";
   ui.langBtn.textContent = t("lang");
   $("galleryBtn").textContent = "▦ " + t("renders");
   $("galleryBtn").style.display = RENDERS.length ? "" : "none";
@@ -852,12 +1164,16 @@ function showSpaceCard(u) {
     <h2>${L(u.space.label)}</h2>
     <div class="sub">${floorLabel} · ${u.area.toFixed(0)} m²</div>
     <p style="font-size:14px;line-height:1.5;margin:0 0 14px">${L(u.space.text) ?? ""}</p>
-    <button class="btn primary" id="stepBtn">${t("stepIn")}</button>
-    <button class="btn" id="enterBtn" style="border:1px solid var(--panel-border)">${t("photos")}</button>`;
+    ${isVilla(u) ? "" : `<button class="btn primary" id="stepBtn">${t("walk")}</button>`}
+    <button class="btn" id="enterBtn" style="border:1px solid var(--panel-border)">${t("photos")}</button>
+    ${u.space.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}`;
   ui.card.classList.remove("hidden");
-  ui.card.querySelector(".close").onclick = () => { state.unit = null; units.forEach(styleUnit); hideCard(); renderUI(); };
-  ui.card.querySelector("#stepBtn").onclick = () => enterRoom(u);
+  ui.card.querySelector(".close").onclick = () => selectFloor(u.level);
+  const sb = ui.card.querySelector("#stepBtn");
+  if (sb) sb.onclick = () => startWalk(stairStartAt(u.level)); // communal area: start at the stairs
   ui.card.querySelector("#enterBtn").onclick = () => openPhotosFor(u);
+  const pb = ui.card.querySelector("#panoBtn");
+  if (pb) pb.onclick = () => openPano(u);
 }
 
 function showCard(u) {
@@ -877,13 +1193,13 @@ function showCard(u) {
       <dt>${t("type")}</dt><dd>${L(type?.label) ?? u.type}</dd>
       <dt>${t("status")}</dt><dd><span class="status-pill"><i class="dot" style="background:${hex(STATUS_COLOR[u.status])}"></i>${t(u.status)}</span></dd>
     </dl>
-    <button class="btn primary" id="stepBtn">${t("stepIn")}</button>
+    <button class="btn primary" id="stepBtn">${t("walk")}</button>
     <button class="btn" id="enterBtn" style="border:1px solid var(--panel-border)">${t("roomPhotos")}</button>
     ${type?.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}
     ${canAsk ? `<a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(t("wa", u.label))}">${t("ask")}</a>` : ""}`;
   ui.card.classList.remove("hidden");
-  ui.card.querySelector(".close").onclick = () => { state.unit = null; units.forEach(styleUnit); hideCard(); renderUI(); };
-  ui.card.querySelector("#stepBtn").onclick = () => enterRoom(u);
+  ui.card.querySelector(".close").onclick = () => selectFloor(u.level); // back to the whole floor
+  ui.card.querySelector("#stepBtn").onclick = () => startWalk(spaces.entranceStart(u)); // start at the room's entrance
   ui.card.querySelector("#enterBtn").onclick = () => openRoomPhotos(u);
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
@@ -892,13 +1208,8 @@ function hideCard() { ui.card.classList.add("hidden"); }
 
 ui.overviewBtn.onclick = () => selectFloor(null);
 ui.langBtn.onclick = () => { lang = lang === "en" ? "id" : "en"; try { localStorage.setItem("stin-lang", lang); } catch {} renderUI(); };
-ui.dayNight.onclick = () => setTime({ day: "golden", golden: "night", night: "day" }[env.current]);
-$("qualityBtn").onclick = () => {
-  quality.high = !quality.high;
-  try { localStorage.setItem("stin-quality", quality.high ? "high" : "lite"); } catch {}
-  location.reload(); // shadow-map size and light count are set at start-up
-};
-$("walkBtn").onclick = () => enterWalk(state.floor ?? 1);
+ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); // golden hour was removed: day <-> night
+$("walkBtn").onclick = () => state.floor !== null && startWalk(stairStartAt(state.floor)); // floor view: start at the stairs
 $("mapBtn").onclick = () => {
   if (!map.available) { toast(t("mapNoKey")); return; }
   mapWanted = !mapWanted;
@@ -908,12 +1219,16 @@ $("mapBtn").onclick = () => {
   renderUI();
 };
 $("walkExit").onclick = () => exitWalk();
-$("walkFloors").onclick = (e) => { if (e.target.dataset.l) enterWalk(+e.target.dataset.l); };
-$("insideWalk").onclick = () => {
-  const p = camera.position.clone(); p.y -= 1.55;
-  enterWalk(state.inside.level, p, Math.atan2(-(controls.target.x - camera.position.x), -(controls.target.z - camera.position.z)));
+// floor menu: go to that floor's corridor (Level 1: the communal area), standing in front of the stairs
+$("walkFloors").onclick = (e) => {
+  if (e.target.dataset.close !== undefined) { closeFloorMenu(); return; }
+  if (!e.target.dataset.l) return;
+  const l = +e.target.dataset.l;
+  closeFloorMenu();
+  if (l !== spaces.state.current?.level || spaces.state.current?.kind === "unit") startWalk(stairStartAt(l));
 };
-$("walkRoom").onclick = () => { const u = $("walkRoom")._unit; if (u) { exitWalk(false); selectUnit(u); } };
+$("insideWalk").onclick = () => state.inside && startWalk(spaces.entranceStart(state.inside));
+$("walkRoom").onclick = () => { const s = spaces.state.current; if (s?.kind === "unit") exitWalk(); };
 $("galleryBtn").onclick = () => openGallery("exterior", 0);
 
 // Room card "Room photos": the room type's photo set + that floor's corridor.
@@ -938,55 +1253,121 @@ function setTime(name) {
   for (const m of allMaterials()) if (m.userData.glass) { m.emissive?.setHex(0xffb066); m.emissiveIntensity = tm.glow * 0.12; }
   ground.material.color.setHex(tm.ground);
   roomGlowMat.color.setHex(0xffc58a).multiplyScalar(tm.roomGlow ?? 0.5);
-  gradePass?.setGrade(tm.grade);
+  grade.set(tm.grade);
+  window.applyLightmaps?.(name); // ?model=glb: the baked light for this time of day
   invalidate(300);
   windowLight.setTime(tm);
   units.forEach(styleUnit);
-  refreshShadows();
+  if (isoK > 0) { savedSky = { bg: scene.background, intensity: scene.backgroundIntensity, fog: scene.fog?.density ?? 0 }; setIsoK(isoK); } // stay white
+  else refreshShadows();
   renderUI();
 }
 
 // ---------- walk mode ----------
-function spawnFor(level) {
-  const sp = units.find((u) => u.level === level && u.kind === "space");
-  const rooms = units.filter((u) => u.level === level && u.kind !== "space");
-  let p;
-  if (rooms.length) { // middle of the corridor between the two rows of rooms
-    p = rooms.reduce((a, u) => a.add(u.center), new THREE.Vector3()).divideScalar(rooms.length);
-  } else if (sp) p = sp.center.clone();
-  else p = new THREE.Vector3(0, 0, 0);
-  p.y = levelY[level] + 1;
-  const floor = walker.floorBelow(p);
-  return floor ?? p.setY(levelY[level]);
+// Walking room by room: only the space you are in is drawn (on white, plain light). Rooms are entered and left through
+// their entrance door (click it), the stairs / lift (click) offer the other floors. See spaces.js.
+// in front of the stairs: on solid floor at that level (not over the stairwell) and with the stairs in sight.
+// Where the stairs are walled off (Level 1), stand beside the enclosure and face into the room instead of the wall.
+const stairStartAt = (l) => {
+  const s = stairStartRaw(l);
+  if (!s) return s;
+  const eye = new THREE.Vector3(s.x, levelY[l] + 1.5, s.z), fwd = new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw));
+  const hit = walker.raycastAll(new THREE.Ray(eye, fwd)).find((q) => q.distance > 0.05);
+  if (hit && hit.distance < 1.6) { // nose to a wall (e.g. the stair enclosure): turn to the most open direction
+    let best = s.yaw, far = 0;
+    for (let a = 0; a < 16; a++) {
+      const yaw = s.yaw + (a / 16) * Math.PI * 2, d = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      const h = walker.raycastAll(new THREE.Ray(eye, d)).find((q) => q.distance > 0.05), dist = h ? h.distance : 50;
+      if (dist > far) { far = dist; best = yaw; }
+    }
+    s.yaw = best;
+  }
+  return s;
+};
+const stairStartRaw = (l) => spaces.stairStart(l, (x, z, cx, cz, strict) => {
+  for (let a = -1; a < 8; a++) { // the spot and 0.6 m around it (the stairwell opening is bigger than the flights)
+    const px = a < 0 ? x : x + Math.cos((a / 8) * Math.PI * 2) * 0.6, pz = a < 0 ? z : z + Math.sin((a / 8) * Math.PI * 2) * 0.6;
+    const h = walker.floorBelow(new THREE.Vector3(px, levelY[l] + 1, pz));
+    if (!h || Math.abs(h.y - levelY[l]) > 0.35) return false;
+  }
+  const eye = new THREE.Vector3(x, levelY[l] + 1.5, z), to = new THREE.Vector3(cx, levelY[l] + 1.5, cz);
+  const dist = eye.distanceTo(to), hit = walker.raycastAll(new THREE.Ray(eye, to.sub(eye).normalize())).find((q) => q.distance > 0.05);
+  return strict ? !!hit && spaces.isStairs(hit.point) && hit.distance > 1.2 : !hit || spaces.isStairs(hit.point) || hit.distance > dist - 1.2;
+});
+const isVilla = (u) => u.kind === "space" && /villa/i.test(u.space?.gallery ?? "");
+function applyWalkView() {
+  const s = spaces.state.current; if (!s) return;
+  iso.setMask(spaces.maskPolys(), 0.25, levelY[s.level] - FLOOR_DEPTH, spaces.maskSub());
+  invalidate(200);
 }
-function enterWalk(level, feet = null, yaw = Math.PI / 2) {
+spaces.state.onChange = () => { applyWalkView(); updateRail(); };
+walker.setAllow((x, z) => !state.walking || spaces.allowed(x, z));
+function startWalk(start) {
+  if (!start) return;
   if (state.inside) leaveInside();
-  hideCard(); lb.open && closeGallery();
-  state.walking = true; state.walkLevel = level; state.floor = null; state.unit = null;
-  setCut(null);
+  hideCard(); lb.open && closeGallery(); closeFloorMenu();
+  clearRoomView();
+  const lvl = start.space.level;
+  state.walking = true; state.walkLevel = lvl; state.unit = null; state.floor = lvl;
+  spaces.closeAll();
+  spaces.setCurrent(start.space);
+  isoAnim = null; setIsoK(1);
+  // the floor you walk on, up to just under the next one (no section caps: you are inside)
+  setCut(levelY[lvl] + 3.7, false);
+  showBand(levelY[lvl] - 0.5, levelY[lvl] + 4.2);
   for (const m of unitMeshes) m.visible = false;
   for (const b of bands) b.visible = false;
   controls.enabled = false; tween = null;
   camera.fov = 70; camera.updateProjectionMatrix();
-  walker.start(feet ?? spawnFor(level), yaw);
+  const p = new THREE.Vector3(start.x, levelY[lvl] + 1, start.z);
+  walker.start(walker.floorBelow(p) ?? p.setY(levelY[lvl]), start.yaw);
   document.body.classList.add("walking");
   renderUI();
+  invalidate(300);
 }
-function exitWalk(fly = true) {
+function exitWalk() {
   if (!state.walking) return;
+  const s = spaces.state.current;
   walker.stop();
   state.walking = false;
-  setWindowRoom(null);
+  spaces.closeAll(); spaces.setCurrent(null);
+  closeFloorMenu();
   document.body.classList.remove("walking");
-  showBand();
-  updateRail();
   camera.fov = 38; camera.updateProjectionMatrix();
   controls.enabled = true;
   controls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion));
   camera.up.set(0, 1, 0);
-  if (fly) selectFloor(null);
+  // back to where you were: the room you were standing in, or the floor
+  if (s?.kind === "unit") selectUnit(s.unit);
+  else selectFloor(s?.level ?? state.walkLevel ?? 2);
   renderUI();
 }
+// Floor menu (from the stairs or the lift)
+const floorMenu = $("walkFloors");
+document.body.appendChild(floorMenu); // a centred pop-up (its old place in the walk bar would offset it)
+function openFloorMenu() { floorMenu.classList.add("open"); if (document.pointerLockElement) document.exitPointerLock(); }
+function closeFloorMenu() { floorMenu.classList.remove("open"); }
+// Click (or tap) while walking: an entrance door opens / closes; the stairs or lift open the floor menu.
+const walkRay = new THREE.Raycaster();
+function walkClick(e) {
+  const r = canvas.getBoundingClientRect();
+  if (e) ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); else ndc.set(0, 0);
+  walkRay.setFromCamera(ndc, camera);
+  const doorHit = walkRay.intersectObjects(spaces.doorMeshes(), false).find((h) => h.distance < 3.5);
+  const wallHit = walker.raycastAll(walkRay.ray).find((h) => h.distance > 0.05);
+  if (doorHit && (!wallHit || doorHit.distance <= wallHit.distance + 0.05)) { spaces.click(doorHit.object.userData.door, camera.position); invalidate(800); return true; }
+  if (wallHit && wallHit.distance < 6 && spaces.isStairs(wallHit.point)) { openFloorMenu(); return true; }
+  return false;
+}
+canvas.addEventListener("click", (e) => { if (state.walking && e.pointerType !== "touch") walkClick(document.pointerLockElement === canvas ? null : e); });
+let tapStart = null; // touch: a short tap (not a drag) counts as a click
+canvas.addEventListener("pointerdown", (e) => { if (state.walking && e.pointerType === "touch") tapStart = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener("pointerup", (e) => {
+  if (!state.walking || e.pointerType !== "touch" || !tapStart) return;
+  if (performance.now() - tapStart.t < 300 && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 12) walkClick(e);
+  tapStart = null;
+});
+document.addEventListener("pointerlockchange", () => document.body.classList.toggle("locked", document.pointerLockElement === canvas));
 // ---------- photo rail: the renders that match where you are (bedroom / bathroom / corridor / shared space) ----------
 const rail = { el: $("photoRail"), key: "" };
 function levelAt(y) { let l = 0; for (const [i, z] of Object.entries(levelY)) if (y >= z - 0.6) l = +i; return l; }
@@ -1076,7 +1457,7 @@ canvas.addEventListener("pointermove", (e) => {
   for (const b of bands) b.material.opacity = b === hit ? 0.28 : 0;
   state.hover = hit?.userData.unit ?? null;
   if (prevHover !== state.hover) units.forEach(styleUnit);
-  canvas.style.cursor = hit ? "pointer" : "";
+  canvas.style.cursor = hit || (roomView && e.pointerType === "mouse" && roomPick(e)) ? "pointer" : "";
   if (hit) {
     const u = hit.userData.unit;
     const f = CONFIG.floors.find((x) => x.level === (u ? u.level : hit.userData.floor));
@@ -1104,6 +1485,7 @@ function updateMoodFocus() {
 }
 canvas.addEventListener("pointerup", (e) => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
+  if (roomClick(e)) return; // room view: TV on / off, doors open / shut
   const hit = pick(e);
   if (!hit) return;
   if (hit.userData.unit) selectUnit(hit.userData.unit);
@@ -1142,13 +1524,17 @@ function placeholderTexture(label) {
   return tex;
 }
 const texLoader = new THREE.TextureLoader();
+// where a unit's 360° settings live: a room -> its room type, a shared space -> its entry in CONFIG.spaces
+function panoOf(u) { return u?.kind === "space" ? u.space : CONFIG.types[u?.type]; }
 function openPano(u) {
   if (!pano.renderer) {
     pano.renderer = new THREE.WebGLRenderer({ canvas: pano.canvas, antialias: true });
     pano.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   }
-  const type = CONFIG.types[u.type];
-  document.getElementById("panoTitle").textContent = `${u.label} · ${L(type?.label) ?? ""}`;
+  const type = panoOf(u);
+  document.getElementById("panoTitle").textContent = u.kind === "space"
+    ? `${L(u.space.label)} · ${L(CONFIG.floors.find((f) => f.level === u.level)?.label) ?? ""}`
+    : `${u.label} · ${L(type?.label) ?? ""}`;
   document.getElementById("panoClose").textContent = t("close");
   document.getElementById("panoWalk").textContent = t("walkHere");
   pano.unit = u;
@@ -1159,7 +1545,7 @@ function openPano(u) {
   const src = type?.pano;
   const loaded = src && pano.src === src && pano.sphere.material.map?.userData.pano; // same room type again: keep it
   pano.src = src;
-  if (!loaded) setMap(placeholderTexture(`${u.label} · ${L(type?.label) ?? u.type}`));
+  if (!loaded) setMap(placeholderTexture(document.getElementById("panoTitle").textContent));
   if (src && !loaded) {
     texLoader.load(src, (tex) => {
       if (pano.src !== src) { tex.dispose(); return; } // another room type was opened meanwhile
@@ -1182,14 +1568,7 @@ function panoToWalk() {
   const u = pano.unit;
   document.getElementById("panoClose").click();
   if (!u) return;
-  const start = u.center.clone(); start.y = levelY[u.level] + 1;
-  const feet = walker.floorBelow(start) ?? start.setY(levelY[u.level]);
-  let yaw = Math.PI / 2;
-  if (u.kind !== "space") {
-    const { ax, out } = facadeSide(u), look = new THREE.Vector3(); look[ax] = out;
-    yaw = Math.atan2(-look.x, -look.z); // same convention as "Walk around" from the room view
-  }
-  enterWalk(u.level, feet, yaw);
+  startWalk(u.kind === "space" ? stairStartAt(u.level) : spaces.entranceStart(u)); // a room: start at its entrance
 }
 document.getElementById("panoWalk").onclick = panoToWalk;
 addEventListener("keydown", (e) => {
@@ -1217,7 +1596,7 @@ for (const ev of ["pointermove", "pointerdown", "pointerup", "wheel", "keydown",
 { // anything finishing loading (textures, sky photo, ferns) needs a redraw
   const lm = THREE.DefaultLoadingManager, prevP = lm.onProgress, prevL = lm.onLoad;
   lm.onProgress = (...a) => { prevP?.(...a); invalidate(300); };
-  lm.onLoad = (...a) => { prevL?.(...a); invalidate(300); };
+  lm.onLoad = (...a) => { prevL?.(...a); try { iso.patchScene(landscape.group); grade.patchScene(landscape.group); } catch {} invalidate(300); }; // ferns arrive later
 }
 document.addEventListener("visibilitychange", () => invalidate(300));
 
@@ -1236,7 +1615,7 @@ function resize() {
   pano.camera.updateProjectionMatrix();
   composer?.setPixelRatio(renderer.getPixelRatio());
   composer?.setSize(w, h);
-  gradePass?.setAspect(w / h);
+  grade.setResolution(renderer.domElement.width, renderer.domElement.height); // (for the vignette)
 }
 addEventListener("resize", resize);
 resize();
@@ -1268,18 +1647,14 @@ function frame(now) {
   }
   if (state.walking) {
     walker.step(dt);
+    // doors: walking through an entrance switches the space; bathroom / balcony doors open as you come close
+    if (spaces.update(walker.feet, dt, camera.position)) invalidate(80);
     if ((roomCheck += dt) > 0.3) { // "You're in K.305" chip
       roomCheck = 0;
-      // indoors only the floors around you are drawn; outside, the whole building
-      const f = walker.feet, b = buildingBox;
-      const indoors = f.x > b.min.x && f.x < b.max.x && f.z > b.min.z && f.z < b.max.z && f.y > levelY[1] - 0.5;
-      const want = indoors ? [f.y - 4.2, f.y + 4.6] : [-Infinity, Infinity];
-      if (isFinite(want[0]) !== isFinite(band[0]) || Math.abs(want[0] - band[0]) > 0.5) showBand(...want);
-      const u = roomAt(walker.feet), chip = $("walkRoom");
+      const s = spaces.state.current, u = s?.kind === "unit" ? s.unit : null, chip = $("walkRoom");
       chip._unit = u;
-      setWindowRoom(u);
       chip.style.display = u ? "" : "none";
-      if (u) chip.textContent = u.kind === "space" ? `${L(u.space.label)} ›` : `${u.label} · ${t(u.status)} ›`;
+      if (u) chip.textContent = `${u.label} · ${t(u.status)} ›`;
       updateRail();
     }
   } else {
@@ -1290,6 +1665,7 @@ function frame(now) {
       if (k === 1) { const done = tween.done; tween = null; done?.(); }
     }
     controls.update();
+    if (roomView) { updateRoomCut(); if (spaces.animate(dt)) invalidate(80); }
   }
   map.update(now);
   if ((creditT += dt) > 0.5) { // Google credit, shown while the map is visible
@@ -1297,12 +1673,16 @@ function frame(now) {
     const credit = map.on ? `<b>Google</b>${map.attributions()}` : "";
     if ($("mapCredit").innerHTML !== credit) $("mapCredit").innerHTML = credit;
   }
+  if (isoAnim) { // fade to / from the white isolated view
+    const k = Math.min(1, (now - isoAnim.s) / isoAnim.d), v = isoAnim.from + (isoAnim.to - isoAnim.from) * ease(k);
+    if (k === 1) { const to = isoAnim.to; isoAnim = null; setIsoK(to); } else setIsoK(v);
+  }
   // --- should we draw this frame? (see "render on demand") ---
   camera.updateMatrixWorld();
   const moved = !camera.matrixWorld.equals(lastCamM) || !camera.projectionMatrix.equals(lastCamP);
   if (moved) { lastCamM.copy(camera.matrixWorld); lastCamP.copy(camera.projectionMatrix); lastCamMove = now; aoPending = true; }
-  const busy = moved || tween || map.on || now < dirtyUntil;
-  const aoOK = composer && !map.on;
+  const busy = moved || tween || isoAnim || map.on || now < dirtyUntil;
+  const aoOK = composer && !map.on && isoK === 0; // no ambient occlusion in the plain isolated views
   const stillLongEnough = now - lastCamMove > 250 && now >= dirtyUntil;
   if (!busy && !(aoOK && aoPending && stillLongEnough)) return; // nothing changed: keep the last picture
   const withAO = aoOK && !busy && stillLongEnough;
@@ -1327,7 +1707,7 @@ function frame(now) {
     const t0 = performance.now();
     composer.render(dt);
     adaptResolution(now, performance.now() - t0, dt, withAO);
-  } else renderer.render(scene, camera);
+  } else renderScene();
   for (const u of units) {
     const show = u.mesh.visible;
     u.labelEl.style.display = show ? "" : "none";
@@ -1356,21 +1736,29 @@ function frame(now) {
 // for the compile and for one warm-up frame (with ambient occlusion) under the loading screen; otherwise the first
 // floor click would still build their shaders.
 env.set("day", radius);
+// every scene material gets the isolation test (except the coloured room volumes / floor bands, which are UI)
+// (also not the hidden section-cap counter: it must see whole solids, or a slab cut by the section box reads as
+// "inside" and the cap paints over the whole floor; the visible cap plane is isolated, so caps stay in the area)
+const notIsolated = new Set([...unitMeshes, ...bands, roomGlow, capMesh]);
+iso.patchScene(scene, (o) => notIsolated.has(o));
+grade.patchScene(scene); // and the colour grade, at the end of every material (and the sky)
 const floorViewObjects = [...unitMeshes, ...bands, cap, capMesh];
 const wasVisible = floorViewObjects.map((o) => o.visible);
 floorViewObjects.forEach((o) => (o.visible = true));
 try {
-  renderer.setRenderTarget(scenePass ? scenePass.target : null);
-  await renderer.compileAsync(scene, camera);
   renderer.setRenderTarget(null);
-  if (composer) { gtao.enabled = true; composer.render(0); gtao.enabled = false; } else renderer.render(scene, camera);
-} catch (e) { console.warn("shader pre-compile skipped", e); }
+  sky.update(scene);
+  await renderer.compileAsync(scene, camera);
+  sky.restore(scene);
+  renderScene();
+} catch (e) { console.warn("shader pre-compile skipped", e); sky.restore(scene); }
 floorViewObjects.forEach((o, i) => (o.visible = wasVisible[i]));
 renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
-env.onHdriReady((name) => setTime(name)); // the sky photo arrived after start-up: switch to it
-window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls };
+env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
+window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
+  iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf };
 mark("ready"); // handy for debugging in the browser console
 ready = true;
 if (hero.classList.contains("gone") && !lb.open) introFly();

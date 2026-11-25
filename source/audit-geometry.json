@@ -1,0 +1,776 @@
+{
+ "levels": {
+  "0": {
+   "tris": 3285,
+   "revit": {
+    "min": [
+     -25.628952026367188,
+     -12.637324333190918,
+     -3.799999952316284
+    ],
+    "max": [
+     23.036758422851562,
+     9.012852668762207,
+     16.5
+    ]
+   },
+   "site": {
+    "min": [
+     -25.629,
+     -3.8,
+     -9.013
+    ],
+    "max": [
+     23.037,
+     16.5,
+     12.637
+    ]
+   }
+  },
+  "1": {
+   "tris": 119958,
+   "revit": {
+    "min": [
+     -19.515522003173828,
+     -11.546767234802246,
+     -0.15000000596046448
+    ],
+    "max": [
+     16.36390495300293,
+     8.572853088378906,
+     16
+    ]
+   },
+   "site": {
+    "min": [
+     -19.516,
+     -0.15,
+     -8.573
+    ],
+    "max": [
+     16.364,
+     16,
+     11.547
+    ]
+   }
+  },
+  "2": {
+   "tris": 42350,
+   "revit": {
+    "min": [
+     -17.67198371887207,
+     -11.752415657043457,
+     3.8449997901916504
+    ],
+    "max": [
+     15.658589363098145,
+     8.387852668762207,
+     15.905000686645508
+    ]
+   },
+   "site": {
+    "min": [
+     -17.672,
+     3.845,
+     -8.388
+    ],
+    "max": [
+     15.659,
+     15.905,
+     11.752
+    ]
+   }
+  },
+  "3": {
+   "tris": 37975,
+   "revit": {
+    "min": [
+     -16.922094345092773,
+     -11.452954292297363,
+     7.84499979019165
+    ],
+    "max": [
+     15.658589363098145,
+     8.16329574584961,
+     15.949999809265137
+    ]
+   },
+   "site": {
+    "min": [
+     -16.922,
+     7.845,
+     -8.163
+    ],
+    "max": [
+     15.659,
+     15.95,
+     11.453
+    ]
+   }
+  },
+  "4": {
+   "tris": 35904,
+   "revit": {
+    "min": [
+     -16.922094345092773,
+     -5.017147541046143,
+     11.845000267028809
+    ],
+    "max": [
+     15.658589363098145,
+     8.16329574584961,
+     16.5
+    ]
+   },
+   "site": {
+    "min": [
+     -16.922,
+     11.845,
+     -8.163
+    ],
+    "max": [
+     15.659,
+     16.5,
+     5.017
+    ]
+   }
+  },
+  "5": {
+   "tris": 204,
+   "revit": {
+    "min": [
+     -16.817798614501953,
+     -4.915589332580566,
+     15.895000457763672
+    ],
+    "max": [
+     15.594491004943848,
+     8.070853233337402,
+     16.492008209228516
+    ]
+   },
+   "site": {
+    "min": [
+     -16.818,
+     15.895,
+     -8.071
+    ],
+    "max": [
+     15.594,
+     16.492,
+     4.916
+    ]
+   }
+  }
+ },
+ "all": {
+  "min": [
+   -25.628952026367188,
+   -12.637324333190918,
+   -3.799999952316284
+  ],
+  "max": [
+   23.036758422851562,
+   9.012852668762207,
+   16.5
+  ]
+ },
+ "byCat": {
+  "Curtain Panels": 72496,
+  "Curtain Wall Mullions": 32794,
+  "Floors": 5084,
+  "Structural Columns": 2991,
+  "Structural Framing": 5181,
+  "Toposolid": 191,
+  "Walls": 15996,
+  "Casework": 13484,
+  "Ceilings": 4040,
+  "Columns": 643,
+  "Communication Devices": 7872,
+  "Doors": 13600,
+  "Furniture": 30934,
+  "Hardscape": 1600,
+  "Landings": 44,
+  "Plumbing Fixtures": 14341,
+  "Roofs": 271,
+  "Runs": 756,
+  "Specialty Equipment": 1364,
+  "Stairs": 672,
+  "Windows": 3964,
+  "Railings": 11358
+ },
+ "byMat": {
+  "Glass": {
+   "tris": 3656,
+   "cats": [
+    "Curtain Panels",
+    "Doors"
+   ]
+  },
+  "GREY": {
+   "tris": 6370,
+   "cats": [
+    "Curtain Wall Mullions",
+    "Floors",
+    "Walls"
+   ]
+  },
+  "WOOD 1 a": {
+   "tris": 25502,
+   "cats": [
+    "Curtain Wall Mullions",
+    "Doors"
+   ]
+  },
+  "Concrete, Cast-in-Place gray": {
+   "tris": 6372,
+   "cats": [
+    "Floors",
+    "Structural Framing",
+    "Walls",
+    "Columns",
+    "Landings",
+    "Runs",
+    "Stairs",
+    "Structural Columns"
+   ]
+  },
+  "Default Floor": {
+   "tris": 76,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "CONCRETE": {
+   "tris": 4763,
+   "cats": [
+    "Structural Columns",
+    "Structural Framing",
+    "Columns",
+    "Floors",
+    "Runs",
+    "Stairs"
+   ]
+  },
+  "Earth": {
+   "tris": 26,
+   "cats": [
+    "Toposolid"
+   ]
+  },
+  "Grass": {
+   "tris": 16,
+   "cats": [
+    "Toposolid",
+    "Floors"
+   ]
+  },
+  "SOIL": {
+   "tris": 205,
+   "cats": [
+    "Toposolid",
+    "Floors"
+   ]
+  },
+  "CEMENT": {
+   "tris": 12331,
+   "cats": [
+    "Walls",
+    "Ceilings",
+    "Columns"
+   ]
+  },
+  "Default Wall": {
+   "tris": 3219,
+   "cats": [
+    "Walls"
+   ]
+  },
+  "Polyvinyl Chloride - Rigid": {
+   "tris": 12,
+   "cats": [
+    "Walls"
+   ]
+  },
+  "Appliance - Gasket": {
+   "tris": 76,
+   "cats": [
+    "Casework"
+   ]
+  },
+  "BLACK": {
+   "tris": 864,
+   "cats": [
+    "Casework",
+    "Doors",
+    "Furniture",
+    "Hardscape",
+    "Plumbing Fixtures"
+   ]
+  },
+  "LIGHT SOURCE": {
+   "tris": 192,
+   "cats": [
+    "Casework"
+   ]
+  },
+  "Metal - Aluminium Brushed berongga2": {
+   "tris": 36,
+   "cats": [
+    "Casework"
+   ]
+  },
+  "Pine": {
+   "tris": 13068,
+   "cats": [
+    "Casework",
+    "Furniture",
+    "Walls"
+   ]
+  },
+  "TC-LIGHT GREY": {
+   "tris": 496,
+   "cats": [
+    "Casework",
+    "Plumbing Fixtures"
+   ]
+  },
+  "Finishes - Interior - FC - Ceiling": {
+   "tris": 1016,
+   "cats": [
+    "Ceilings",
+    "Casework"
+   ]
+  },
+  "GYPSUM": {
+   "tris": 1528,
+   "cats": [
+    "Ceilings"
+   ]
+  },
+  "Gypsum Wall Board": {
+   "tris": 212,
+   "cats": [
+    "Ceilings"
+   ]
+  },
+  "Softwood, Lumber": {
+   "tris": 1016,
+   "cats": [
+    "Ceilings"
+   ]
+  },
+  "Plastic - Sony - Black_Matt": {
+   "tris": 7296,
+   "cats": [
+    "Communication Devices"
+   ]
+  },
+  "Screen - Sony - Black_Matt": {
+   "tris": 576,
+   "cats": [
+    "Communication Devices"
+   ]
+  },
+  "Analytical Panels": {
+   "tris": 32,
+   "cats": [
+    "Curtain Panels"
+   ]
+  },
+  "Default New Material": {
+   "tris": 68904,
+   "cats": [
+    "Curtain Panels"
+   ]
+  },
+  "VL_GATE_STEEL": {
+   "tris": 1524,
+   "cats": [
+    "Curtain Wall Mullions"
+   ]
+  },
+  "Metal - Paint Finish - Grey": {
+   "tris": 5640,
+   "cats": [
+    "Doors"
+   ]
+  },
+  "Stainless Steel": {
+   "tris": 3320,
+   "cats": [
+    "Doors",
+    "Plumbing Fixtures"
+   ]
+  },
+  "Timber HWD": {
+   "tris": 2824,
+   "cats": [
+    "Doors",
+    "Furniture"
+   ]
+  },
+  "Wood - Birch": {
+   "tris": 1168,
+   "cats": [
+    "Doors"
+   ]
+  },
+  "CEMENT SPESI": {
+   "tris": 2859,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "DECK 5": {
+   "tris": 184,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "GRAVEL 1": {
+   "tris": 32,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "PAVING 2": {
+   "tris": 4,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "PAVING 6": {
+   "tris": 2,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "Sand": {
+   "tris": 62,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "TILE - Ceramic 100X100": {
+   "tris": 236,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "TILE - Ceramic 60x60": {
+   "tris": 324,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "Water": {
+   "tris": 12,
+   "cats": [
+    "Floors"
+   ]
+  },
+  "Back Board": {
+   "tris": 408,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Birch": {
+   "tris": 512,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Black Paint": {
+   "tris": 384,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Default": {
+   "tris": 11426,
+   "cats": [
+    "Furniture",
+    "Hardscape",
+    "Plumbing Fixtures",
+    "Specialty Equipment",
+    "Doors",
+    "Windows"
+   ]
+  },
+  "ESTOFADO ESPREGUI_ADEIRA": {
+   "tris": 80,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "FABRIC": {
+   "tris": 7912,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Glass - Clear, Grey": {
+   "tris": 4,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Linen, White": {
+   "tris": 288,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "M1_B00 - Black": {
+   "tris": 192,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "MADEIRA ESPREGUI_ADEIRA": {
+   "tris": 1360,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Metal - Chrome": {
+   "tris": 64,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Rubber, Black": {
+   "tris": 48,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Tecido Toalha": {
+   "tris": 302,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Timber - Ash": {
+   "tris": 3672,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Wood Laminate": {
+   "tris": 48,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "fabric - cream": {
+   "tris": 1120,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "CONCRETE 1": {
+   "tris": 1192,
+   "cats": [
+    "Hardscape",
+    "Walls"
+   ]
+  },
+  "CHROME": {
+   "tris": 5821,
+   "cats": [
+    "Plumbing Fixtures"
+   ]
+  },
+  "MARBLE GREY": {
+   "tris": 24,
+   "cats": [
+    "Plumbing Fixtures"
+   ]
+  },
+  "PORCELAIN WHITE": {
+   "tris": 1060,
+   "cats": [
+    "Plumbing Fixtures"
+   ]
+  },
+  "Stainless Steel, Brushed": {
+   "tris": 6224,
+   "cats": [
+    "Plumbing Fixtures"
+   ]
+  },
+  "WHITE": {
+   "tris": 48,
+   "cats": [
+    "Plumbing Fixtures"
+   ]
+  },
+  "GLAZINGfrosty": {
+   "tris": 103,
+   "cats": [
+    "Roofs"
+   ]
+  },
+  "BMCD2AR3\\Solid Materials \\Flat Colors\\Smooth\\Black": {
+   "tris": 24,
+   "cats": [
+    "Specialty Equipment"
+   ]
+  },
+  "BMCD2AR3\\Solid Materials \\Plastics\\Textured\\White": {
+   "tris": 16,
+   "cats": [
+    "Specialty Equipment"
+   ]
+  },
+  "Steel, Chrome Plated": {
+   "tris": 48,
+   "cats": [
+    "Specialty Equipment"
+   ]
+  },
+  "Steel, Polished": {
+   "tris": 24,
+   "cats": [
+    "Specialty Equipment"
+   ]
+  },
+  "Concrete, Precast": {
+   "tris": 166,
+   "cats": [
+    "Structural Framing"
+   ]
+  },
+  "Glazing-Clear": {
+   "tris": 720,
+   "cats": [
+    "Windows",
+    "Doors"
+   ]
+  },
+  "Metal - Aluminium Brushed": {
+   "tris": 2368,
+   "cats": [
+    "Windows"
+   ]
+  },
+  "QARC White": {
+   "tris": 760,
+   "cats": [
+    "Windows",
+    "Doors"
+   ]
+  },
+  "Metal - Aluminium": {
+   "tris": 60,
+   "cats": [
+    "Casework"
+   ]
+  },
+  "Metal - LG - Steel": {
+   "tris": 332,
+   "cats": [
+    "Ceilings"
+   ]
+  },
+  "ALUMUNIUM GREY": {
+   "tris": 48,
+   "cats": [
+    "Doors"
+   ]
+  },
+  "GLAZING": {
+   "tris": 24,
+   "cats": [
+    "Doors"
+   ]
+  },
+  "Metal - Brushed Aluminium": {
+   "tris": 736,
+   "cats": [
+    "Doors"
+   ]
+  },
+  "Available in all fabrics/leathers/colors from the current COR collection": {
+   "tris": 1514,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Lacquerable in all colours from current COR collection": {
+   "tris": 1424,
+   "cats": [
+    "Furniture"
+   ]
+  },
+  "Metal - Paint Finish - Dark Gray,Matte": {
+   "tris": 11170,
+   "cats": [
+    "Railings"
+   ]
+  },
+  "STEEL BLACK": {
+   "tris": 188,
+   "cats": [
+    "Railings"
+   ]
+  },
+  "Roofing, grey shingles": {
+   "tris": 126,
+   "cats": [
+    "Roofs"
+   ]
+  },
+  "CEMENT gray": {
+   "tris": 475,
+   "cats": [
+    "Walls"
+   ]
+  },
+  "Metal - Painted - Grey": {
+   "tris": 48,
+   "cats": [
+    "Casework"
+   ]
+  },
+  "Aluminium - FAKRO - RAL7022 - T_lerie": {
+   "tris": 124,
+   "cats": [
+    "Windows"
+   ]
+  },
+  "Aluminium - FAKRO - RAL9003 - Poign_e": {
+   "tris": 268,
+   "cats": [
+    "Windows"
+   ]
+  },
+  "Aluminium - FAKRO - RAL9006 - Servomoteur": {
+   "tris": 72,
+   "cats": [
+    "Windows"
+   ]
+  },
+  "Bois de pin - FAKRO - RAL1013 - Caisson": {
+   "tris": 44,
+   "cats": [
+    "Windows"
+   ]
+  },
+  "Plastique - FAKRO - RAL9003 - Cadre PVC": {
+   "tris": 512,
+   "cats": [
+    "Windows"
+   ]
+  },
+  "Metal Deck": {
+   "tris": 42,
+   "cats": [
+    "Roofs"
+   ]
+  }
+ }
+}
