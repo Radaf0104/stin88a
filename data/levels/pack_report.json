@@ -10,11 +10,11 @@
   },
   {
    "L": "L1",
-   "gltf": 288,
-   "bin": 2283,
-   "meshes": 77,
-   "nodes": 96,
-   "tris": 204507
+   "gltf": 293,
+   "bin": 1499,
+   "meshes": 78,
+   "nodes": 97,
+   "tris": 135625
   },
   {
    "L": "L2",
@@ -57,7 +57,7 @@
    "tris": 5000
   }
  ],
- "textures_kb": 4277,
+ "textures_kb": 4276,
  "lightmaps": [
   {
    "file": "lm/LM_K305_ao.ktx2",

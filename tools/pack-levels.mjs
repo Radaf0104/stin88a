@@ -7,7 +7,7 @@
 // Prints the size of every file against the brief's budget.
 import { NodeIO, MathUtils } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression, EXTMeshGPUInstancing, KHRTextureTransform } from "@gltf-transform/extensions";
-import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive, simplifyPrimitive } from "@gltf-transform/functions";
+import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive, simplifyPrimitive, compactPrimitive } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
@@ -119,6 +119,107 @@ function instanceHeavy(doc) {
   return { nodesIn, batches };
 }
 
+// (round 21 of IMPROVEMENT_LOG.md) The facade battens: after the bevel simplify below, the L1 batten mesh is ~5,700
+// plain boxes (~1 MB of compressed vertices). Every piece that is exactly a box (8 corners, 3 orthogonal face
+// directions, all 24 vertices on the box) becomes one GPU instance of a single unit box: translation = its centre,
+// rotation = its face directions (sorted by size, right-handed), scale = its sizes. Same triangles on screen, a few
+// bytes per piece on the wire. All pieces share the first box's UVs (the teak grain on a 5 cm face). Anything that is
+// not a clean box stays in the original mesh.
+function instanceBoxes(doc, matRe = /^M_teak_batten$/) {
+  const root = doc.getRoot(), scene = root.getDefaultScene() ?? root.listScenes()[0];
+  const ext = doc.createExtension(EXTMeshGPUInstancing), buf = root.listBuffers()[0];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const unit = (a) => { const l = Math.hypot(...a) || 1; return a.map((x) => x / l); };
+  const xf = (m, p, w) => [0, 1, 2].map((k) => m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + (w ? m[12 + k] : 0));
+  const stats = { boxes: 0, left: 0, batches: 0 };
+  for (const node of root.listNodes()) {
+    const mesh = node.getMesh(), e = node.getExtras();
+    if (!mesh || e.style_room || e.kind === "door" || node.getExtension("EXT_mesh_gpu_instancing")) continue;
+    if (mesh.listParents().filter((x) => x.propertyType === "Node").length > 1) continue;
+    const W = node.getWorldMatrix();
+    for (const p of mesh.listPrimitives()) {
+      if (!p.getIndices() || !matRe.test(p.getMaterial()?.getName() ?? "") || p.getAttribute("TEXCOORD_1")) continue;
+      const P = p.getAttribute("POSITION"), UV = p.getAttribute("TEXCOORD_0"), idx = p.getIndices().getArray();
+      const n = P.getCount(), pw = [], el = [];
+      for (let i = 0; i < n; i++) pw.push(xf(W, P.getElement(i, el), true));
+      // pieces: vertices welded by position (0.1 mm), triangles joined by shared corners
+      const key = new Map(), vid = new Int32Array(n);
+      for (let i = 0; i < n; i++) { const k = pw[i].map((x) => Math.round(x * 1e4)).join(","); if (!key.has(k)) key.set(k, key.size); vid[i] = key.get(k); }
+      const par = Int32Array.from({ length: key.size }, (_, i) => i), f = (x) => { while (par[x] !== x) x = par[x] = par[par[x]]; return x; };
+      for (let t = 0; t < idx.length; t += 3) { const a = f(vid[idx[t]]); for (const j of [1, 2]) { const b = f(vid[idx[t + j]]); if (b !== a) par[b] = a; } }
+      const comps = new Map();
+      for (let t = 0; t < idx.length; t += 3) { const r = f(vid[idx[t]]); if (!comps.has(r)) comps.set(r, []); comps.get(r).push(t); }
+      const keepTris = [], inst = []; let proto = null;
+      for (const tris of comps.values()) {
+        const verts = [...new Set(tris.flatMap((t) => [idx[t], idx[t + 1], idx[t + 2]]))];
+        const corners = new Set(verts.map((i) => vid[i]));
+        const axes = [];
+        for (const t of tris) {
+          const nn = cross(sub(pw[idx[t + 1]], pw[idx[t]]), sub(pw[idx[t + 2]], pw[idx[t]]));
+          if (Math.hypot(...nn) < 1e-12) continue;
+          const u = unit(nn); if (!axes.some((a) => Math.abs(dot(a, u)) > 0.999)) axes.push(u);
+        }
+        let ok = corners.size === 8 && axes.length === 3 && Math.abs(dot(axes[0], axes[1])) < 1e-3 && Math.abs(dot(axes[0], axes[2])) < 1e-3 && Math.abs(dot(axes[1], axes[2])) < 1e-3;
+        let box = null;
+        if (ok) {
+          const lo = [0, 1, 2].map((k) => Math.min(...verts.map((i) => dot(pw[i], axes[k])))), hi = [0, 1, 2].map((k) => Math.max(...verts.map((i) => dot(pw[i], axes[k]))));
+          const ext3 = hi.map((h, k) => h - lo[k]);
+          ok = ext3.every((x) => x > 1e-4) && verts.every((i) => [0, 1, 2].every((k) => { const d = dot(pw[i], axes[k]); return Math.abs(d - lo[k]) < 1e-3 || Math.abs(d - hi[k]) < 1e-3; }));
+          if (ok) {
+            const order = [0, 1, 2].sort((a, b) => ext3[a] - ext3[b]);
+            const ax = order.map((k) => axes[k]), ex = order.map((k) => ext3[k]);
+            if (dot(cross(ax[0], ax[1]), ax[2]) < 0) ax[2] = ax[2].map((x) => -x);
+            const c = [0, 1, 2].reduce((acc, k) => acc.map((v, j) => v + axes[k][j] * (lo[k] + hi[k]) / 2), [0, 0, 0]);
+            box = { ax, ex, c };
+          }
+        }
+        if (!ok) { keepTris.push(...tris); continue; }
+        if (!proto) { // the unit box, in this piece's own frame
+          const map = new Map(), pos = [], nrm = [], uv = [], ind = [];
+          for (const t of tris) for (let j = 0; j < 3; j++) {
+            const i = idx[t + j];
+            if (!map.has(i)) {
+              map.set(i, pos.length / 3); const d = sub(pw[i], box.c);
+              pos.push(...[0, 1, 2].map((k) => dot(d, box.ax[k]) / box.ex[k]));
+              if (UV) uv.push(...UV.getElement(i, []));
+            }
+            ind.push(map.get(i));
+          }
+          for (let t = 0; t < ind.length; t += 3) { // flat normals from the unit-box faces
+            const a = ind[t] * 3, b = ind[t + 1] * 3, cc = ind[t + 2] * 3;
+            const nn = unit(cross(sub(pos.slice(b, b + 3), pos.slice(a, a + 3)), sub(pos.slice(cc, cc + 3), pos.slice(a, a + 3))));
+            for (const v of [ind[t], ind[t + 1], ind[t + 2]]) { nrm[v * 3] = nn[0]; nrm[v * 3 + 1] = nn[1]; nrm[v * 3 + 2] = nn[2]; }
+          }
+          proto = { pos, nrm, uv, ind };
+        }
+        inst.push(box);
+      }
+      if (inst.length < 50) continue; // (not worth it)
+      const m = inst.length, T = new Float32Array(m * 3), R = new Float32Array(m * 4), S = new Float32Array(m * 3), t3 = [0, 0, 0], r4 = [0, 0, 0, 1], s3 = [1, 1, 1];
+      inst.forEach((b, i) => {
+        const mat = [...b.ax[0].map((x) => x * b.ex[0]), 0, ...b.ax[1].map((x) => x * b.ex[1]), 0, ...b.ax[2].map((x) => x * b.ex[2]), 0, ...b.c, 1];
+        MathUtils.decompose(mat, t3, r4, s3); T.set(t3, i * 3); R.set(r4, i * 4); S.set(s3, i * 3);
+      });
+      const bp = doc.createPrimitive().setMaterial(p.getMaterial())
+        .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setArray(new Float32Array(proto.pos)).setBuffer(buf))
+        .setAttribute("NORMAL", doc.createAccessor().setType("VEC3").setArray(new Float32Array(proto.nrm)).setBuffer(buf))
+        .setIndices(doc.createAccessor().setType("SCALAR").setArray(new Uint16Array(proto.ind)).setBuffer(buf));
+      if (UV) bp.setAttribute("TEXCOORD_0", doc.createAccessor().setType("VEC2").setArray(new Float32Array(proto.uv)).setBuffer(buf));
+      const batch = ext.createInstancedMesh()
+        .setAttribute("TRANSLATION", doc.createAccessor().setType("VEC3").setArray(T).setBuffer(buf))
+        .setAttribute("ROTATION", doc.createAccessor().setType("VEC4").setArray(R).setBuffer(buf))
+        .setAttribute("SCALE", doc.createAccessor().setType("VEC3").setArray(S).setBuffer(buf));
+      scene.addChild(doc.createNode(mesh.getName() + "_box_inst").setMesh(doc.createMesh(mesh.getName() + "_box").addPrimitive(bp))
+        .setExtension("EXT_mesh_gpu_instancing", batch).setExtras({ ...e, instanced: m }));
+      stats.boxes += m; stats.left += keepTris.length; stats.batches++;
+      if (keepTris.length) { const ni = new Uint32Array(keepTris.length * 3); keepTris.forEach((t, k) => ni.set([idx[t], idx[t + 1], idx[t + 2]], k * 3)); p.getIndices().setArray(ni); compactPrimitive(p); }
+      else { mesh.removePrimitive(p); p.dispose(); }
+    }
+    if (!mesh.listPrimitives().length) node.setMesh(null);
+  }
+  return stats;
+}
 
 // Download size (round 14 of IMPROVEMENT_LOG.md): the UVs are in metres (07_uv box projection), outside [0, 1], so
 // quantize() left them as 32-bit floats - 7.5 MB, the biggest attribute. Every textured material's UVs are mapped
@@ -262,6 +363,8 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     }
   }
   console.log(`${L}: battens + railings ${thBefore} -> ${thAfter} triangles`);
+  const bx = instanceBoxes(doc);
+  if (bx.batches) console.log(`${L}: ${bx.boxes} batten boxes -> ${bx.batches} GPU-instanced box (${bx.left} triangles left as they were)`);
   // Door leaves turn about their node's origin (the hinge, tools/blender/04_join.py). quantize() below moves a mesh
   // node's origin / scale to fit its quantized positions, which put the pivot in the middle of every leaf (doors
   // spun on their centre). The leaf node keeps the hinge and its extras as a parent; the mesh moves to a child node,

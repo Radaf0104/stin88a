@@ -327,6 +327,28 @@ const FACADE_TINT = {
 // (round 19) texture density: the teak deck (balconies, and the corridor / communal floors) tiled every ~1.3 m, so its
 // knots read ~25 cm wide at eye level. x2.5 = real-sized grain. Same images (shared source), only the UV scale.
 const TEX_DENSITY = { M_teak_deck: 2.5 };
+// a copy of a material whose texture lookups move by a per-instance amount (0..1 of the texture) on instanced draws
+function jitterInstanceUVs(m) {
+  const c = m.clone();
+  c.userData = { ...m.userData }; delete c.userData.isoPatched; delete c.userData.gradePatched; // (patched again later)
+  c.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace("#include <uv_vertex>", `#include <uv_vertex>
+      #ifdef USE_INSTANCING
+        vec2 uvJit = fract(vec2(float(gl_InstanceID) * 0.7548777, float(gl_InstanceID) * 0.5698403));
+        #ifdef USE_MAP
+          vMapUv += uvJit;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv += uvJit;
+        #endif
+        #ifdef USE_ROUGHNESSMAP
+          vRoughnessMapUv += uvJit;
+        #endif
+      #endif`);
+  };
+  c.customProgramCacheKey = () => "uvjit";
+  return c;
+}
 let lightmapManifest = {};
 const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF"]; // (the 88A file's own SITE level is replaced by the masterplan site plan, see "Ground")
 if (USE_GLB) {
@@ -388,6 +410,9 @@ if (USE_GLB) {
           }
         }
       }
+      // (round 21) facade battens drawn as instances of one box (pack-levels instanceBoxes): every copy shares the first
+      // box's UVs, so each gets its own offset into the teak texture (hashed from its instance number) - no repeated knots
+      if (o.isInstancedMesh && /_box_inst$/.test(o.name)) o.material = jitterInstanceUVs(o.material);
       o.castShadow = !o.material.transparent; o.receiveShadow = true;
       if (o.material.transparent) o.renderOrder = 3;
       // GPU-instanced furniture (tools/pack-levels.mjs instanceHeavy): its bounds cover every instance
