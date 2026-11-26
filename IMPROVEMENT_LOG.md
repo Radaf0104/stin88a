@@ -238,3 +238,22 @@ Picture: `tools/out/r11_hero.jpg`. The remaining p5 / p50 gap is the histogram's
 | textured meshes loaded | 312 | 312 |
 
 No console errors on either profile. CPU and network throttling still can't be emulated in this browser, so phone load and FPS aren't measured directly.
+
+## Round 14: 16-bit UVs (geometry −37 % over the wire)
+**Measured:** by attribute (uncompressed), the UVs were the biggest part of the geometry: TEXCOORD_0 as 32-bit floats was 7.5 MB, against 5.8 MB of (already 16-bit) positions, 4.2 MB of indices and 2.9 MB of normals. quantize() skipped them, because the box-projected UVs are in metres, outside [0, 1].
+- **tools/pack-levels.mjs packUVs:**
+  - Every textured material's UVs use one fixed rule, uv' = (uv + 128) / 256, and its texture slots get the inverse `KHR_texture_transform` (offset −128, scale 256). The texture lands exactly where it did. 16-bit storage gives ~4 mm in texture space, invisible on 1–2 m texture tiles. Being the same everywhere keeps the materials identical across levels (round 8 sharing).
+  - Primitives whose material has no texture drop their UVs (~200 k vertices).
+  - The style rooms keep metre UVs (js/roomstyle.js tiles its procedural textures by them). Where they share a textured material with the rest, they get a raw copy `<name>__raw` (25 materials; the loader's glass/water override ignores the suffix).
+  - `quantize({ quantizeTexcoord: 16 })`.
+
+| | before | after |
+|---|---|---|
+| level geometry (.bin) over the wire | 6029 KB | **3793 KB** (−37 %) |
+| levels on disk (pack report) | 17.60 MB | 14.02 MB |
+| total over the wire, desktop / phone | 10.9 / ≈ 7.8 MB | **≈ 8.7 / ≈ 5.6 MB** |
+| hero-camera colour (p5/p50/p95, RGB) | 69/145/233, 134/139/131 | identical (textures land in the same place) |
+| materials / programs / draw calls | 201 / 31 / 515 | 209 (+8 raw copies) / 31 / 515 |
+| GPU textures | 64 | 64 (shared, no duplicate requests) |
+
+Checked: K.404 (packed UVs) has stone, walnut and tiles mapped as before (`tools/out/r14_K404.jpg`). K.401 (style room, raw metre UVs, procedural textures at 1.67 repeats = 0.6 m tiles) is intact. No console errors.

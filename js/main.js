@@ -413,7 +413,8 @@ if (USE_GLB) {
       const ud = owner?.userData.kind ? owner.userData : {};
       Object.assign(o.userData, { ...ud, ...o.userData });
       const name = o.material?.name;
-      if (OVERRIDE[name]) o.material = materialFor(OVERRIDE[name], {});
+      const base = name?.replace(/__raw$/, ""); // (round 14: style rooms' raw-UV copies of a material, see pack-levels packUVs)
+      if (OVERRIDE[base]) o.material = materialFor(OVERRIDE[base], {});
       // one material per name across all levels (round 8): every level file brings its own copy of the same Blender
       // material (same textures, now shared - round 7), which multiplied materials and GPU state changes per frame
       else if (name && !Array.isArray(o.material)) {

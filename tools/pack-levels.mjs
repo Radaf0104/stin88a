@@ -6,7 +6,7 @@
 // <level>.gltf + <level>.bin. Lightmaps -> data/levels/lm/*.ktx2 (ETC1S; --uastc-lightmaps for UASTC).
 // Prints the size of every file against the brief's budget.
 import { NodeIO, MathUtils } from "@gltf-transform/core";
-import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression, EXTMeshGPUInstancing } from "@gltf-transform/extensions";
+import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression, EXTMeshGPUInstancing, KHRTextureTransform } from "@gltf-transform/extensions";
 import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive, simplifyPrimitive } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import { execFileSync } from "node:child_process";
@@ -117,6 +117,50 @@ function instanceHeavy(doc) {
     }
   }
   return { nodesIn, batches };
+}
+
+
+// Download size (round 14 of IMPROVEMENT_LOG.md): the UVs are in metres (07_uv box projection), outside [0, 1], so
+// quantize() left them as 32-bit floats - 7.5 MB, the biggest attribute. Every textured material's UVs are mapped
+// with one fixed rule, uv' = (uv + 128) / 256, and its textures get the inverse KHR_texture_transform (offset -128,
+// scale 256): the texture lands exactly where it did, and 16-bit storage is ~4 mm in texture space. The same rule
+// everywhere keeps materials identical across levels (the site shares them by name). Primitives whose material has no
+// texture don't need UVs at all. The style rooms (06s) keep their metre UVs (js/roomstyle.js tiles its procedural
+// textures by them): where they share a material with the rest, they get a raw copy named <name>__raw.
+const UV_OFF = -128, UV_SCALE = 256;
+function packUVs(doc) {
+  const root = doc.getRoot(), ext = doc.createExtension(KHRTextureTransform);
+  const styleMeshes = new Set();
+  for (const n of root.listNodes()) if (n.getExtras().style_room && n.getMesh()) styleMeshes.add(n.getMesh());
+  const infos = (m) => [m.getBaseColorTextureInfo(), m.getNormalTextureInfo(), m.getMetallicRoughnessTextureInfo(), m.getOcclusionTextureInfo(), m.getEmissiveTextureInfo()]
+    .filter((ti, i) => ti && [m.getBaseColorTexture(), m.getNormalTexture(), m.getMetallicRoughnessTexture(), m.getOcclusionTexture(), m.getEmissiveTexture()][i]);
+  // 1. style-room primitives get a raw copy of a material that the rest of the building also uses
+  const otherUse = new Set();
+  for (const me of root.listMeshes()) if (!styleMeshes.has(me)) for (const p of me.listPrimitives()) if (p.getMaterial()) otherUse.add(p.getMaterial());
+  const raw = new Map();
+  for (const me of styleMeshes) for (const p of me.listPrimitives()) {
+    const m = p.getMaterial(); if (!m || !otherUse.has(m) || !infos(m).length) continue; // (untextured: UVs irrelevant)
+    if (!raw.has(m)) raw.set(m, m.clone().setName(m.getName() + "__raw"));
+    p.setMaterial(raw.get(m));
+  }
+  // 2. everything else: textured -> packed UVs + texture transform; untextured -> no UVs
+  const transformed = new Set(); let packed = 0, dropped = 0;
+  for (const me of root.listMeshes()) {
+    if (styleMeshes.has(me)) continue;
+    for (const p of me.listPrimitives()) {
+      const m = p.getMaterial(), uv = p.getAttribute("TEXCOORD_0");
+      if (!m || !uv) continue;
+      if (!infos(m).length) { p.setAttribute("TEXCOORD_0", null); dropped += uv.getCount(); continue; }
+      const a = uv.clone(), el = [0, 0];
+      for (let i = 0; i < a.getCount(); i++) { a.getElement(i, el); a.setElement(i, [(el[0] - UV_OFF) / UV_SCALE, (el[1] - UV_OFF) / UV_SCALE]); }
+      p.setAttribute("TEXCOORD_0", a); packed += a.getCount();
+      if (!transformed.has(m)) {
+        transformed.add(m);
+        for (const ti of infos(m)) ti.setExtension("KHR_texture_transform", ext.createTransform().setOffset([UV_OFF, UV_OFF]).setScale([UV_SCALE, UV_SCALE]));
+      }
+    }
+  }
+  return { packed, dropped, raw: raw.size };
 }
 
 const BUILDING = new Set(["shell", "stair", "railing", "doorframe"]);
@@ -255,7 +299,9 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     tex.setImage(readFileSync(dst)).setMimeType("image/ktx2").setURI("tex/" + key + ".ktx2");
   }
   doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
-  await doc.transform(reorder({ encoder: MeshoptEncoder }), quantize());
+  const uvs = packUVs(doc);
+  console.log(`${L}: UVs packed for ${uvs.packed} vertices, dropped for ${uvs.dropped} (untextured), ${uvs.raw} raw style-room materials`);
+  await doc.transform(prune({ keepAttributes: true }), reorder({ encoder: MeshoptEncoder }), quantize({ quantizeTexcoord: 16 }));
   for (const b of doc.getRoot().listBuffers()) b.setURI(L + ".bin");
   await io.write(join(OUT, L + ".gltf"), doc);
   const tris = doc.getRoot().listMeshes().reduce((a, m) => a + m.listPrimitives().reduce((b, p) => b + (p.getIndices() ? p.getIndices().getCount() : p.getAttribute("POSITION").getCount()) / 3, 0), 0);

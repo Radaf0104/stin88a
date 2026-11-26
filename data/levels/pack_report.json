@@ -3,61 +3,61 @@
   {
    "L": "L0",
    "gltf": 24,
-   "bin": 90,
+   "bin": 64,
    "meshes": 5,
    "nodes": 5,
    "tris": 4334
   },
   {
    "L": "L1",
-   "gltf": 312,
-   "bin": 3443,
+   "gltf": 288,
+   "bin": 2283,
    "meshes": 77,
    "nodes": 96,
    "tris": 204507
   },
   {
    "L": "L2",
-   "gltf": 380,
-   "bin": 2373,
+   "gltf": 347,
+   "bin": 1552,
    "meshes": 82,
    "nodes": 122,
    "tris": 147804
   },
   {
    "L": "L3",
-   "gltf": 719,
-   "bin": 2345,
+   "gltf": 670,
+   "bin": 1569,
    "meshes": 182,
    "nodes": 250,
    "tris": 141930
   },
   {
    "L": "L4",
-   "gltf": 927,
-   "bin": 2191,
+   "gltf": 905,
+   "bin": 1599,
    "meshes": 262,
    "nodes": 344,
    "tris": 134261
   },
   {
    "L": "ROOF",
-   "gltf": 40,
-   "bin": 416,
+   "gltf": 39,
+   "bin": 285,
    "meshes": 9,
    "nodes": 9,
    "tris": 24405
   },
   {
    "L": "SITE",
-   "gltf": 10,
-   "bin": 66,
+   "gltf": 9,
+   "bin": 43,
    "meshes": 2,
    "nodes": 2,
    "tris": 5000
   }
  ],
- "textures_kb": 4276,
+ "textures_kb": 4277,
  "lightmaps": [
   {
    "file": "lm/LM_K305_ao.ktx2",
