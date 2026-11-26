@@ -69,11 +69,15 @@ const STATUS_COLOR = { available: 0x2fb57a, occupied: 0xe0443e }; // green / red
 // ---------- quality: always the full look (AO + bloom + big shadows); the Lite mode and its button were removed ----------
 const quality = { high: true };
 try { localStorage.removeItem("stin-quality"); } catch {}
+// phones (touch screen, short side <= 900 px; round 6 of IMPROVEMENT_LOG.md): the same look, lighter where a phone pays
+// the most - a 2048 sun shadow map instead of 4096 (a quarter of the memory), 3 mood lights instead of 6 (each one is
+// shaded on every pixel), sharpness capped at 1.25x instead of 1.5x
+const phone = matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) <= 900;
 
 // ---------- scene ----------
 const canvas = document.getElementById("scene");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true }); // stencil = section caps
-const maxDpr = quality.high ? 1.5 : 1; // sharpness cap: beyond this the GPU cost rises fast for little visible gain
+const maxDpr = quality.high ? (phone ? 1.25 : 1.5) : 1; // sharpness cap: beyond this the GPU cost rises fast for little visible gain
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.AgXToneMapping; // keeps whites white and shadows colourful (ACES crushed the mid-tones)
@@ -93,8 +97,8 @@ controls.maxDistance = 220;
 // Sky, sun and image-based light (day / golden hour / night)
 const env = createEnvironment(renderer, scene);
 const sun = env.sun;
-sun.shadow.mapSize.setScalar(quality.high ? 4096 : 1024);
-const mood = createMoodLights(scene, quality.high ? 6 : 3);
+sun.shadow.mapSize.setScalar(quality.high ? (phone ? 2048 : 4096) : 1024);
+const mood = createMoodLights(scene, quality.high && !phone ? 6 : 3);
 
 // Post-processing: ambient occlusion (contact shadows) + soft bloom on lamps. High quality only.
 let composer = null, gtao = null, gradePass = null, bloomPass = null, scenePass = null;
@@ -1829,7 +1833,7 @@ mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
 window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
-  iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime,
+  iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console
 ready = true;

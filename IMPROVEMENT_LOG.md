@@ -95,3 +95,15 @@ Measured from the hero render's own camera (gallery `r02`, terrace facade; new d
 | V5 after | 83 / 158 / 238 | 143 / 151 / 136 |
 
 The remaining gap in p5 is content, not tone: the render's darkest 5 % are trees and deep shade, which our scene doesn't have (lawn is its darkest large area). Pictures: `tools/out/c1_r02_before.jpg`, `c1_C_exp12_grade_env.jpg`.
+
+## Round 6: a phone profile
+Every device got the full desktop settings: a 4096² sun shadow map (~64 MB of GPU memory), 6 mood lights (each one shaded on every pixel) and up to 1.5× pixel density.
+- **js/main.js:** `phone` = a touch screen whose short side is ≤ 900 px. Phones get the same look with a 2048 shadow map, 3 mood lights and a 1.25× sharpness cap. Desktop and tablets are unchanged.
+
+| | desktop | phone (375×812 emulated) |
+|---|---|---|
+| sun shadow map | 4096 | **2048** (a quarter of the memory) |
+| lights in the scene | 8 | **5** |
+| pixel-density cap | 1.5 | **1.25** (≈30 % fewer pixels than 1.5 on a 3× phone screen) |
+
+Checked: both profiles load without console errors. There is no real phone GPU here to time it on.
