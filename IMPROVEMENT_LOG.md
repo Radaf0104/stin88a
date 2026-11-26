@@ -164,3 +164,19 @@ GPU frame time this round: 5.4 ms at 1280×720. The browser pane was visible for
 - Cheap contact shadows under furniture.
 - Interior colour match against the room renders.
 - CC0 fabric textures (Poly Haven linen / bouclé) for the style rooms.
+
+## Round 10: colour preset from research/color-preset.json, measured and refined
+Every variant was measured from the hero camera (luminance p5 / p50 / p95 | mean RGB). Target: 33 / 136 / 232 | 142 / 142 / 133.
+
+| variant | settings | result |
+|---|---|---|
+| round 5 (before) | Neutral, exposure 1.2, env .22 | 83 / 158 / 238 \| 143 / 151 / 136 |
+| research A | Neutral 1.15, env **.6**, contrast 1.10, black point −.03, WB r1.03 g.98 | 96 / 165 / 241 \| 152 / 161 / 151 (the high env lifts the blacks) |
+| research B | **AgX** 1.0, env .6 | 106 / 157 / 224 \| 155 / 154 / 147 (no clipping, good tint, but AgX's toe lifts the blacks) |
+| B with env .22 | AgX 1.0–1.25 | p5 99–106, p95 213–218 (AgX is too flat here) |
+| C1 | round 5 + stronger WB (warm g .965, cool g .955) | 82 / 155 / 234 \| 144 / 147 / 135 |
+| **C4 (applied)** | Neutral, **exposure 1.0, sun 7.8, env .2, contrast 1.16**, WB as C1 | **71 / 149 / 234 \| 138 / 142 / 130** |
+
+- C4 is the closest so far: highlights match (234 vs 232), green is gone (R and G within 4, B 8–12 below, as in the render), and midtones are 13 brighter.
+- The remaining p5 gap is scene content (the render's tree shadows).
+- Picture: `tools/out/cp_C4.jpg`. Applied in js/environment.js `TIMES.day`.
