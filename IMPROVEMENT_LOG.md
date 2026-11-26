@@ -281,3 +281,17 @@ The overview draws the exterior doors (balcony glass, fixed leaves) closed and n
 | hero-camera colour (p5/p50/p95, RGB) | 69/145/233, 134/139/131 | identical |
 
 **Since the baseline:** overview draw calls 790 → 369 (−53 %).
+
+## Round 17: facade materials matched to the render by swatch
+Draw calls left (369): mostly the building shell (71), interior furniture seen through the windows (74) and door frames (26). Cutting more would mean duplicating whole floors of geometry for an overview-only copy (more GPU memory), so this round turned to materials outside the template rooms.
+- **Measured:** 5×5 px swatches from the hero camera, with the material under each pixel found by raycasting. Against the render: the facade timber read too orange (#a6724c vs #a0846b), the terrace deck very saturated (#3a2012), and the sunlit plaster a bit bright and yellow (#f4e9d2 vs #e7dbcf).
+- **js/main.js:** per-material colour factors (the render's value / ours, converted to linear), applied once to each shared material at load (`FACADE_TINT`).
+
+| swatch | render | before | after |
+|---|---|---|---|
+| facade timber, sunlit | #a0846b | #a6724c | **#a28771** |
+| terrace deck | warm mid brown | #3a2012 (saturated) | #3e2618 |
+| plaster, sunlit | #e7dbcf | #f4e9d2 | #f4e6d7 (bluer; brightness held by the tone shoulder) |
+| whole frame p5/p50/p95, RGB | 33/136/232, 142/142/133 | 69/145/233, 134/139/131 | 70/145/231, 134/139/132 |
+
+A stronger plaster factor (0.885) was tried: sunlit plaster barely moved (the Neutral shoulder and the highlight lift keep it bright) and it only darkened the shade and interiors, so the mild one was kept.

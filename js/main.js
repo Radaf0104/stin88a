@@ -373,6 +373,12 @@ for (const entry of byMat.values()) {
 // Object extras (glTF) arrive as userData: kind (shell / ceiling / stair / railing / doorframe / door / bed / tv ...),
 // level, collide, bathroom, tv, room, lm_set, door_width / door_slide / door_wide_axis.
 const doorLeaves = [], ceilingObjs = [], tvObjs = [], glbLightmapped = [];
+// per-material colour factors (linear) from the round 17 swatch match; sRGB ratios r/g/b converted with ^2.2
+const lin = (r, g, b) => [r, g, b].map((v) => Math.pow(v, 2.2));
+const FACADE_TINT = {
+  M_teak_timber: lin(0.96, 1.16, 1.41), M_teak_batten: lin(0.96, 1.16, 1.41), M_teak_deck: lin(1.05, 1.1, 1.12),
+  M_plaster_cream: lin(0.95, 0.94, 0.985), // (stronger factors barely move sunlit plaster - tone shoulder + highlight lift - and only darken the shade)
+};
 let lightmapManifest = {};
 const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF"]; // (the 88A file's own SITE level is replaced by the masterplan site plan, see "Ground")
 if (USE_GLB) {
@@ -419,7 +425,14 @@ if (USE_GLB) {
       // material (same textures, now shared - round 7), which multiplied materials and GPU state changes per frame
       else if (name && !Array.isArray(o.material)) {
         const first = sharedMats.get(name);
-        if (first) o.material = first; else sharedMats.set(name, o.material);
+        if (first) o.material = first;
+        else {
+          sharedMats.set(name, o.material);
+          // (round 17) facade colours matched to the hero render by swatch, from its own camera: the timber read too
+          // orange (#a6724c vs #a0846b), the sunlit plaster a touch bright / yellow (#f4e9d2 vs #e7dbcf). Factor = render / ours.
+          const tint = FACADE_TINT[name];
+          if (tint && o.material.color) o.material.color.multiply(new THREE.Color().setRGB(...tint, THREE.LinearSRGBColorSpace));
+        }
       }
       o.castShadow = !o.material.transparent; o.receiveShadow = true;
       if (o.material.transparent) o.renderOrder = 3;
