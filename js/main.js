@@ -15,6 +15,7 @@ import { createMoodLights, createWindowLight } from "./lighting.js";
 import { createWalker } from "./walk.js";
 import { createMassing } from "./massing.js";
 import { createRoomStyle } from "./roomstyle.js";
+import { makeTextures, tileRepeat } from "./proctex.js";
 import { createMap } from "./map.js";
 import { createGrade, createSky } from "./grade.js";
 import { createIsolation } from "./isolate.js";
@@ -577,6 +578,17 @@ scene.add(ground);
 const sitePlanReady = Promise.all([import("three/addons/loaders/GLTFLoader.js"), import("three/addons/libs/meshopt_decoder.module.js")])
   .then(([{ GLTFLoader }, { MeshoptDecoder }]) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("data/levels/SITEPLAN.gltf"))
   .then((g) => {
+    // (round 18) subtle procedural texture on the site's flat colours (0 bytes: js/proctex.js), tiled by its metre UVs:
+    // asphalt mottling on roads, slab joints on the concrete pads, a large soft variation on lawn and soil
+    const T = makeTextures(renderer);
+    const SITE_TEX = { road: [T.plaster, 3], pad: [T.porcelain, 1.2], grass: [T.plaster, 9], soil: [T.plaster, 5] };
+    g.scene.traverse((o) => {
+      const st = o.isMesh && SITE_TEX[o.material?.name?.replace("SITE_", "")];
+      if (st && o.geometry.attributes.uv) { // UVs arrive as (metres + 256) / 512 (tools/build-siteplan.mjs): repeat / offset undo it
+        const t = tileRepeat(st[0], st[1]); t.repeat.set(512 / st[1], 512 / st[1]); t.offset.set(-256 / st[1], -256 / st[1]);
+        o.material.map = t; o.material.needsUpdate = true;
+      }
+    });
     g.scene.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; if (!sitePlanMats.includes(o.material)) sitePlanMats.push(o.material); } });
     ground.add(g.scene);
     return g.scene;

@@ -52,17 +52,29 @@ for (const [t, M] of Object.entries(merged)) {
     for (const j of [a, b, c]) { nrm[j] += nx; nrm[j + 1] += ny; nrm[j + 2] += nz; }
   }
   for (let j = 0; j < nrm.length; j += 3) { const l = Math.hypot(nrm[j], nrm[j + 1], nrm[j + 2]) || 1; nrm[j] /= l; nrm[j + 1] /= l; nrm[j + 2] /= l; }
+  // UVs in metres, box-projected by the normal (round 18): the site gets subtle procedural textures on the website
+  // (asphalt mottling, slab joints, soft lawn variation - js/main.js), tiled by these
+  const uv = new Float32Array(pos.length / 3 * 2);
+  for (let j = 0, k = 0; j < pos.length; j += 3, k += 2) {
+    const ax = Math.abs(nrm[j]), ay = Math.abs(nrm[j + 1]), az = Math.abs(nrm[j + 2]);
+    if (ay >= ax && ay >= az) { uv[k] = pos[j]; uv[k + 1] = pos[j + 2]; }
+    else if (ax >= az) { uv[k] = pos[j + 2]; uv[k + 1] = pos[j + 1]; }
+    else { uv[k] = pos[j]; uv[k + 1] = pos[j + 1]; }
+    // stored as (m + 256) / 512, so they fit [0, 1] and quantize to 16 bits (~8 mm); js/main.js undoes it in the repeat
+    uv[k] = (uv[k] + 256) / 512; uv[k + 1] = (uv[k + 1] + 256) / 512;
+  }
   const L = LOOK[t];
   const mat = doc.createMaterial("SITE_" + t).setBaseColorFactor([...L.color.map(srgbToLin), 1]).setRoughnessFactor(L.rough).setMetallicFactor(0);
   const prim = doc.createPrimitive().setMaterial(mat)
     .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setArray(pos).setBuffer(buf))
     .setAttribute("NORMAL", doc.createAccessor().setType("VEC3").setArray(nrm).setBuffer(buf))
+    .setAttribute("TEXCOORD_0", doc.createAccessor().setType("VEC2").setArray(uv).setBuffer(buf))
     .setIndices(doc.createAccessor().setType("SCALAR").setArray(idx).setBuffer(buf));
   scene.addChild(doc.createNode("siteplan_" + t).setMesh(doc.createMesh("siteplan_" + t).addPrimitive(prim)).setExtras({ kind: "siteplan", surface: t }));
   tris += idx.length / 3;
 }
 await MeshoptEncoder.ready;
-await doc.transform(weld(), reorder({ encoder: MeshoptEncoder }), quantize(), prune());
+await doc.transform(weld(), reorder({ encoder: MeshoptEncoder }), quantize({ quantizeTexcoord: 16 }), prune({ keepAttributes: true })); // (keep the UVs: the textures are added on the website)
 doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
 buf.setURI("SITEPLAN.bin");
 await new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.encoder": MeshoptEncoder }).write(OUT, doc);

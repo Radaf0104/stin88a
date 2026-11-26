@@ -295,3 +295,8 @@ Draw calls left (369): mostly the building shell (71), interior furniture seen t
 | whole frame p5/p50/p95, RGB | 33/136/232, 142/142/133 | 69/145/233, 134/139/131 | 70/145/231, 134/139/132 |
 
 A stronger plaster factor (0.885) was tried: sunlit plaster barely moved (the Neutral shoulder and the highlight lift keep it bright) and it only darkened the shade and interiors, so the mild one was kept.
+
+## Round 18 — site materials (roads, pads, lawn, soil)
+- `tools/build-siteplan.mjs`: box-projected metre UVs (stored (m+256)/512, 16-bit), `prune({keepAttributes})` keeps them. SITEPLAN 12 KB + 154 KB.
+- `js/main.js`: the site plan gets the shared procedural maps (no download): asphalt mottling (plaster, 3 m), slab joints on pads/retaining walls (porcelain, 1.2 m), soft lawn variation (plaster, 9 m), soil (plaster, 5 m).
+- Measured, hero camera: before 69/145/233, RGB 134/139/131 → after 65/145/232, RGB 130/136/130 (slight shadow-end texture, median unchanged). No console errors. Check render: tools/out/r18_site.jpg.
