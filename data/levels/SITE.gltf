@@ -7,25 +7,9 @@
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 10932,
-      "normalized": false,
-      "byteOffset": 0,
-      "bufferView": 0
-    },
-    {
-      "type": "VEC2",
-      "componentType": 5126,
-      "count": 4251,
-      "normalized": false,
-      "byteOffset": 0,
-      "bufferView": 1
-    },
-    {
-      "type": "SCALAR",
-      "componentType": 5123,
       "count": 60,
       "normalized": false,
-      "byteOffset": 21864,
+      "byteOffset": 0,
       "bufferView": 0
     },
     {
@@ -34,49 +18,23 @@
       "count": 36,
       "normalized": false,
       "byteOffset": 0,
-      "bufferView": 2
+      "bufferView": 1
     },
     {
       "type": "SCALAR",
       "componentType": 5123,
-      "count": 4008,
+      "count": 14940,
       "normalized": false,
-      "byteOffset": 21984,
+      "byteOffset": 120,
       "bufferView": 0
     },
     {
       "type": "VEC2",
       "componentType": 5126,
-      "count": 2048,
+      "count": 6299,
       "normalized": false,
       "byteOffset": 0,
-      "bufferView": 3
-    },
-    {
-      "type": "VEC3",
-      "componentType": 5122,
-      "count": 4251,
-      "max": [
-        22762,
-        2044,
-        32767
-      ],
-      "min": [
-        -22762,
-        -2044,
-        -32767
-      ],
-      "normalized": true,
-      "byteOffset": 0,
-      "bufferView": 4
-    },
-    {
-      "type": "VEC3",
-      "componentType": 5122,
-      "count": 4251,
-      "normalized": true,
-      "byteOffset": 0,
-      "bufferView": 5
+      "bufferView": 2
     },
     {
       "type": "VEC3",
@@ -94,41 +52,41 @@
       ],
       "normalized": true,
       "byteOffset": 0,
-      "bufferView": 6
+      "bufferView": 3
     },
     {
       "type": "VEC3",
-      "componentType": 5122,
+      "componentType": 5120,
       "count": 36,
       "normalized": true,
       "byteOffset": 0,
-      "bufferView": 7
+      "bufferView": 4
     },
     {
       "type": "VEC3",
       "componentType": 5122,
-      "count": 2048,
+      "count": 6299,
       "max": [
-        3624,
-        72,
+        22762,
+        2044,
         32767
       ],
       "min": [
-        -3624,
-        -72,
+        -22762,
+        -2044,
         -32767
       ],
       "normalized": true,
       "byteOffset": 0,
-      "bufferView": 8
+      "bufferView": 5
     },
     {
       "type": "VEC3",
-      "componentType": 5122,
-      "count": 2048,
+      "componentType": 5120,
+      "count": 6299,
       "normalized": true,
       "byteOffset": 0,
-      "bufferView": 9
+      "bufferView": 6
     }
   ],
   "bufferViews": [
@@ -141,7 +99,7 @@
         "EXT_meshopt_compression": {
           "buffer": 0,
           "byteOffset": 0,
-          "byteLength": 5258,
+          "byteLength": 5257,
           "mode": "TRIANGLES",
           "byteStride": 2,
           "count": 15000
@@ -151,30 +109,13 @@
     {
       "buffer": 1,
       "byteOffset": 30000,
-      "byteLength": 34008,
-      "target": 34962,
-      "byteStride": 8,
-      "extensions": {
-        "EXT_meshopt_compression": {
-          "buffer": 0,
-          "byteOffset": 5260,
-          "byteLength": 22771,
-          "mode": "ATTRIBUTES",
-          "byteStride": 8,
-          "count": 4251
-        }
-      }
-    },
-    {
-      "buffer": 1,
-      "byteOffset": 64008,
       "byteLength": 288,
       "target": 34962,
       "byteStride": 8,
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 28032,
+          "byteOffset": 5260,
           "byteLength": 276,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
@@ -184,65 +125,31 @@
     },
     {
       "buffer": 1,
-      "byteOffset": 64296,
-      "byteLength": 16384,
+      "byteOffset": 30288,
+      "byteLength": 50392,
       "target": 34962,
       "byteStride": 8,
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 28308,
-          "byteLength": 11144,
+          "byteOffset": 5536,
+          "byteLength": 33877,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
-          "count": 2048
+          "count": 6299
         }
       }
     },
     {
       "buffer": 1,
       "byteOffset": 80680,
-      "byteLength": 34008,
-      "target": 34962,
-      "byteStride": 8,
-      "extensions": {
-        "EXT_meshopt_compression": {
-          "buffer": 0,
-          "byteOffset": 39452,
-          "byteLength": 14947,
-          "mode": "ATTRIBUTES",
-          "byteStride": 8,
-          "count": 4251
-        }
-      }
-    },
-    {
-      "buffer": 1,
-      "byteOffset": 114688,
-      "byteLength": 34008,
-      "target": 34962,
-      "byteStride": 8,
-      "extensions": {
-        "EXT_meshopt_compression": {
-          "buffer": 0,
-          "byteOffset": 54400,
-          "byteLength": 10585,
-          "mode": "ATTRIBUTES",
-          "byteStride": 8,
-          "count": 4251
-        }
-      }
-    },
-    {
-      "buffer": 1,
-      "byteOffset": 148696,
       "byteLength": 288,
       "target": 34962,
       "byteStride": 8,
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 64988,
+          "byteOffset": 39416,
           "byteLength": 218,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
@@ -252,52 +159,54 @@
     },
     {
       "buffer": 1,
-      "byteOffset": 148984,
-      "byteLength": 288,
+      "byteOffset": 80968,
+      "byteLength": 144,
       "target": 34962,
-      "byteStride": 8,
+      "byteStride": 4,
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 65208,
-          "byteLength": 141,
+          "byteOffset": 39636,
+          "byteLength": 74,
           "mode": "ATTRIBUTES",
-          "byteStride": 8,
+          "filter": "OCTAHEDRAL",
+          "byteStride": 4,
           "count": 36
         }
       }
     },
     {
       "buffer": 1,
-      "byteOffset": 149272,
-      "byteLength": 16384,
+      "byteOffset": 81112,
+      "byteLength": 50392,
       "target": 34962,
       "byteStride": 8,
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 65352,
-          "byteLength": 7900,
+          "byteOffset": 39712,
+          "byteLength": 22079,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
-          "count": 2048
+          "count": 6299
         }
       }
     },
     {
       "buffer": 1,
-      "byteOffset": 165656,
-      "byteLength": 16384,
+      "byteOffset": 131504,
+      "byteLength": 25196,
       "target": 34962,
-      "byteStride": 8,
+      "byteStride": 4,
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 73252,
-          "byteLength": 6760,
+          "byteOffset": 61792,
+          "byteLength": 5953,
           "mode": "ATTRIBUTES",
-          "byteStride": 8,
-          "count": 2048
+          "filter": "OCTAHEDRAL",
+          "byteStride": 4,
+          "count": 6299
         }
       }
     }
@@ -356,10 +265,10 @@
   "buffers": [
     {
       "uri": "SITE.bin",
-      "byteLength": 80012
+      "byteLength": 67748
     },
     {
-      "byteLength": 182040,
+      "byteLength": 156700,
       "extensions": {
         "EXT_meshopt_compression": {
           "fallback": true
@@ -451,75 +360,37 @@
   ],
   "meshes": [
     {
-      "name": "SITE_concrete",
+      "name": "SITE_plastic_black",
       "primitives": [
         {
           "attributes": {
             "TEXCOORD_0": 1,
-            "POSITION": 6,
-            "NORMAL": 7
+            "POSITION": 4,
+            "NORMAL": 5
           },
           "mode": 4,
-          "material": 0,
+          "material": 1,
           "indices": 0
         }
       ]
     },
     {
-      "name": "SITE_plastic_black",
+      "name": "M_concrete_building",
       "primitives": [
         {
           "attributes": {
             "TEXCOORD_0": 3,
-            "POSITION": 8,
-            "NORMAL": 9
-          },
-          "mode": 4,
-          "material": 1,
-          "indices": 2
-        }
-      ]
-    },
-    {
-      "name": "SITE_rv_DefaultMaterial",
-      "primitives": [
-        {
-          "attributes": {
-            "TEXCOORD_0": 5,
-            "POSITION": 10,
-            "NORMAL": 11
+            "POSITION": 6,
+            "NORMAL": 7
           },
           "mode": 4,
           "material": 0,
-          "indices": 4
+          "indices": 2
         }
       ]
     }
   ],
   "nodes": [
-    {
-      "name": "SITE_concrete",
-      "extras": {
-        "level": "SITE",
-        "kind": "shell",
-        "categories": [
-          "Hardscape"
-        ],
-        "collide": true,
-        "lm_set": "LM_SITE"
-      },
-      "translation": [
-        -13.71611738204956,
-        0.4625000059604645,
-        -1.0010361671447754
-      ],
-      "scale": [
-        7.411816120147705,
-        7.411816120147705,
-        7.411816120147705
-      ],
-      "mesh": 0
-    },
     {
       "name": "SITE_plastic_black",
       "extras": {
@@ -541,30 +412,28 @@
         0.21250000596046448,
         0.21250000596046448
       ],
-      "mesh": 1
+      "mesh": 0
     },
     {
-      "name": "SITE_rv_DefaultMaterial",
+      "name": "M_concrete_building",
       "extras": {
-        "level": "SITE",
         "kind": "shell",
-        "categories": [
-          "Hardscape"
-        ],
+        "level": "SITE",
+        "bathroom": false,
         "collide": true,
-        "lm_set": "LM_SITE"
+        "merged": 2
       },
       "translation": [
-        -18.470223426818848,
-        0.5650000274181366,
-        0.4152567982673645
+        -13.71611738204956,
+        0.4625000059604645,
+        -1.0010361671447754
       ],
       "scale": [
-        2.2666818499565125,
-        2.2666818499565125,
-        2.2666818499565125
+        7.411816120147705,
+        7.411816120147705,
+        7.411816120147705
       ],
-      "mesh": 2
+      "mesh": 1
     }
   ],
   "scenes": [
@@ -606,8 +475,7 @@
       },
       "nodes": [
         0,
-        1,
-        2
+        1
       ]
     }
   ],

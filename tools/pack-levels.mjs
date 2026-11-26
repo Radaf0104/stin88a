@@ -7,7 +7,7 @@
 // Prints the size of every file against the brief's budget.
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression } from "@gltf-transform/extensions";
-import { dedup, prune, weld, reorder, quantize } from "@gltf-transform/functions";
+import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
@@ -22,7 +22,10 @@ const TOKTX = existsSync(join(process.env.LOCALAPPDATA ?? "", "Programs/KTX-Soft
 const UASTC_LM = process.argv.includes("--uastc-lightmaps");
 mkdirSync(join(OUT, "tex"), { recursive: true }); mkdirSync(join(OUT, "lm"), { recursive: true });
 
-function toktx(src, dst, { normal = false, srgb = true, uastc = false } = {}) {
+// colour maps that stay at full size: big surfaces seen up close over whole walls / floors / facades. Everything else
+// (bedding, curtains, rug, chair, plant, metal...) only ever covers a small part of the screen: 512 px is plenty.
+const FULL_SIZE = /plaster|wood|teak|tile|concrete|paving|marble|stone/;
+function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = false } = {}) {
   if (!process.argv.includes("--force") && existsSync(dst) && statSync(dst).mtimeMs > statSync(src).mtimeMs) return;   // already built from this source
   const args = ["--t2", "--genmipmap", "--assign_oetf", srgb ? "srgb" : "linear"];
   if (normal || uastc) args.push("--encode", "uastc", "--uastc_quality", "2", "--zcmp", "18");
@@ -30,13 +33,81 @@ function toktx(src, dst, { normal = false, srgb = true, uastc = false } = {}) {
   // normal maps: 512 px + rate-distortion optimisation (surface relief at room scale does not need 1k; it was ~10 MB)
   // (no --normal_mode: that stores X/Y in red/alpha, which three.js does not read as a normal map)
   if (normal) args.push("--resize", "512x512", "--uastc_rdo_l", "1.5");
-  try { execFileSync(TOKTX, [...args, dst, src], { stdio: "pipe" }); }
-  catch (e) { throw new Error("toktx failed for " + src + " -> " + dst + ": " + (e.stderr?.toString() || e.message)); }
+  else if (half) args.push("--resize", "512x512");   // roughness maps and small-item colour maps
+  // (retried: on Windows the output file is sometimes still locked for a moment - "could not open output file")
+  for (let attempt = 1; ; attempt++) {
+    try { execFileSync(TOKTX, [...args, dst, src], { stdio: "pipe" }); return; }
+    catch (e) {
+      if (attempt >= 4) throw new Error("toktx failed for " + src + " -> " + dst + ": " + (e.stderr?.toString() || e.message));
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500 * attempt);
+    }
+  }
+}
+
+// Draw calls: every glTF primitive is one draw call (and one more per shadow pass). The Blender export keeps one node
+// per piece of furniture (~840 primitives), so pieces that the website treats the same way are merged, per level, into
+// one mesh per material. Kept as they are: door leaves (they swing / slide), TVs (clickable), meshes with a baked
+// lightmap (own UVs + lightmap texture). Grouped separately so the site can still tell them apart: ceilings (shown /
+// hidden), the building shell (shell / stair / railing / doorframe: drawn in the overview), bathroom fittings (hidden
+// in the overview), collision. Copies that share one mesh are written out per copy, so the file grows a little.
+const BUILDING = new Set(["shell", "stair", "railing", "doorframe"]);
+function mergeLevel(doc, man) {
+  const root = doc.getRoot(), scene = root.getDefaultScene() ?? root.listScenes()[0];
+  const inDoor = (n) => { for (let p = n; p; p = p.getParentNode?.()) if (p.getExtras().kind === "door") return true; return false; };
+  const groups = new Map();
+  for (const node of root.listNodes()) {
+    const mesh = node.getMesh(), e = node.getExtras();
+    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set]) continue;
+    const cls = e.kind === "ceiling" ? "ceiling" : BUILDING.has(e.kind) ? "building" : "furniture";
+    const w = node.getWorldMatrix();
+    const det = w[0] * (w[5] * w[10] - w[6] * w[9]) - w[1] * (w[4] * w[10] - w[6] * w[8]) + w[2] * (w[4] * w[9] - w[5] * w[8]);
+    for (const prim of mesh.listPrimitives()) {
+      if (prim.getMode() !== 4 || !prim.getIndices()) continue;   // triangles with indices (weld() made them indexed)
+      const sem = prim.listSemantics().sort().join(",");
+      const key = [prim.getMaterial()?.getName() ?? "-", cls, !!e.bathroom, !!e.collide, sem].join("|");
+      if (!groups.has(key)) groups.set(key, { cls, e, items: [] });
+      groups.get(key).items.push({ node, prim, w, det });
+    }
+  }
+  let before = 0, after = 0;
+  const done = new Map();   // node -> its primitives that went into a merged mesh
+  for (const [key, g] of groups) {
+    before += g.items.length;
+    if (g.items.length < 2) { after += 1; continue; }
+    // world-space copies of every primitive (accessors copied, so shared furniture meshes are left untouched)
+    const parts = g.items.map(({ prim, w, det }) => {
+      const p = prim.clone();
+      for (const s of p.listSemantics()) p.setAttribute(s, p.getAttribute(s).clone());
+      const idx = p.getIndices().clone(); p.setIndices(idx);
+      transformPrimitive(p, w);
+      if (det < 0) { const a = idx.getArray(); for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } idx.setArray(a); }
+      return p;
+    });
+    const joined = joinPrimitives(parts);
+    for (const p of parts) { for (const s of p.listSemantics()) p.getAttribute(s).dispose(); p.getIndices().dispose(); p.dispose(); }
+    const mesh = doc.createMesh(key.split("|").slice(0, 2).join("_")).addPrimitive(joined);
+    const kind = g.cls === "ceiling" ? "ceiling" : g.cls === "building" ? (g.e.kind || "shell") : "furniture";
+    const node = doc.createNode(mesh.getName()).setMesh(mesh)
+      .setExtras({ kind, level: g.e.level, bathroom: !!g.e.bathroom, collide: !!g.e.collide, merged: g.items.length });
+    scene.addChild(node);
+    for (const it of g.items) { if (!done.has(it.node)) done.set(it.node, new Set()); done.get(it.node).add(it.prim); }
+    after += 1;
+  }
+  // a node whose primitives all went into merged meshes is removed; one with some left gets its own mesh holding just
+  // those (meshes can be shared by several copies, so the shared mesh itself is never edited)
+  for (const [n, merged] of done) {
+    const m = n.getMesh(), rest = m.listPrimitives().filter((p) => !merged.has(p));
+    if (!rest.length) { n.dispose(); continue; }
+    const own = doc.createMesh(m.getName()); for (const p of rest) own.addPrimitive(p); n.setMesh(own);
+  }
+  return { before, after };
 }
 
 await MeshoptEncoder.ready; await MeshoptDecoder.ready;
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.encoder": MeshoptEncoder, "meshopt.decoder": MeshoptDecoder });
 const sizes = [];
+// lightmap sets that were baked (their meshes keep their own node: lightmap UVs + their own lightmap)
+const LM_MAN = existsSync(join(OUT, "lightmaps.json")) ? JSON.parse(readFileSync(join(OUT, "lightmaps.json"), "utf8")) : {};
 const kb = (p) => Math.round(statSync(p).size / 1024);
 for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
   const L = basename(file, ".gltf");
@@ -49,6 +120,9 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     for (const [k, v] of Object.entries(e)) if (!k.startsWith("BIM") && k !== "lm_margin") out[k] = v;
     n.setExtras(out);
   }
+  const mg = mergeLevel(doc, LM_MAN);
+  await doc.transform(prune({ keepAttributes: true }));
+  console.log(`${L}: merged ${mg.before} furniture / building primitives into ${mg.after}`);
   // textures: which slot each image is used in decides the encoding
   const usage = new Map();
   for (const mat of doc.getRoot().listMaterials()) {
@@ -63,10 +137,12 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     const slot = usage.get(tex) ?? "baseColorTexture";
     const src = join(tmpdir(), "stinpack_" + key + extname(uri)); writeFileSync(src, tex.getImage());
     const dst = join(OUT, "tex", key + ".ktx2");
-    toktx(src, dst, { normal: slot === "normalTexture", srgb: slot === "baseColorTexture" || slot === "emissiveTexture" });
+    const isColour = slot === "baseColorTexture" || slot === "emissiveTexture";
+    toktx(src, dst, { normal: slot === "normalTexture", srgb: isColour,
+      half: slot === "metallicRoughnessTexture" || slot === "occlusionTexture" || (isColour && !FULL_SIZE.test(key.toLowerCase())) });
     tex.setImage(readFileSync(dst)).setMimeType("image/ktx2").setURI("tex/" + key + ".ktx2");
   }
-  doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
+  doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
   await doc.transform(reorder({ encoder: MeshoptEncoder }), quantize());
   for (const b of doc.getRoot().listBuffers()) b.setURI(L + ".bin");
   await io.write(join(OUT, L + ".gltf"), doc);
