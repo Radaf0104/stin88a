@@ -261,10 +261,13 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
     let moved = false;
     for (const d of doors) {
       if (d.k === d.target) continue;
-      d.k = d.target > d.k ? Math.min(d.target, d.k + dt / 0.55) : Math.max(d.target, d.k - dt / 0.55);
-      const e = d.k * d.k * (3 - 2 * d.k);
+      // per-door timing (js/roomstyle.js sets dur / ease / swing on the style rooms' doors: 90 deg in ~0.91 s,
+      // easeInOutQuad, like the Nagoya Hill reference); other doors keep 0.55 s smoothstep and a 83 deg swing
+      const dur = d.dur ?? 0.55;
+      d.k = d.target > d.k ? Math.min(d.target, d.k + dt / dur) : Math.max(d.target, d.k - dt / dur);
+      const e = d.ease === "quad" ? (d.k < 0.5 ? 2 * d.k * d.k : 1 - (-2 * d.k + 2) ** 2 / 2) : d.k * d.k * (3 - 2 * d.k);
       if (d.slide) { d.pivot.position.setComponent(d.wide, (d.hingeBase ?? d.box.min.getComponent(d.wide) + 0.03) + (d.slideDir ?? 1) * e * (d.width - 0.12)); }
-      else d.pivot.rotation.y = (d.swingFlip ?? 1) * d.sign * e * Math.PI * 0.5 * 0.92;
+      else d.pivot.rotation.y = (d.swingFlip ?? 1) * d.sign * e * Math.PI * 0.5 * (d.swing ?? 0.92);
       moved = true;
     }
     return moved;

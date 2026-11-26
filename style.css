@@ -274,3 +274,17 @@ body.walking.locked .crosshair { display: block; }
 .massing-label.boarding::before { background: #a07a52; }
 .massing-label.parking::before { background: #6f7b86; }
 .massing-label.hidden { display: none; }
+
+/* style rooms (js/roomstyle.js): a small dock with the style / lights switches, and hotspot dots on interactive objects */
+.rs-dock { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 30; display: flex; gap: 6px; align-items: center;
+  flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); padding: 6px 8px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--panel-border); box-shadow: var(--shadow); backdrop-filter: blur(14px); }
+.rs-dock.hidden { display: none; }
+.rs-dock .rs-title { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 6px; white-space: nowrap; }
+.rs-dock .chip { font-size: 12px; padding: 5px 10px; }
+.rs-hotspots { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
+.rs-hot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: #fff;
+  border: 1.5px solid var(--accent); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); transition: background 0.2s; }
+.rs-hot.touch { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; }
+.rs-hot.on { background: var(--accent); }
+@media (max-width: 640px) { .rs-dock { bottom: 64px; border-radius: 14px; } }

@@ -14,6 +14,7 @@ import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
 import { createWalker } from "./walk.js";
 import { createMassing } from "./massing.js";
+import { createRoomStyle } from "./roomstyle.js";
 import { createMap } from "./map.js";
 import { createGrade, createSky } from "./grade.js";
 import { createIsolation } from "./isolate.js";
@@ -1069,6 +1070,9 @@ function setRoomView(u, sp) {
   const tv = u.kind === "space" ? null : tvOf(u);
   roomView = { u, sp, inner, outer, floorY: levelY[u.level], tv };
   setCeilings(false);
+  roomStyle?.enter(u, tv);
+  const capHex = roomStyle?.capColor(u); // style rooms: light wall caps (#e3dcd2), like the reference's section cut
+  if (capHex) cap.material.color.set(capHex);
   iso.uniforms.uIsoCutY.value = levelY[u.level] + 0.05; // the walls in front go down to just above the floor
   updateRoomCut();
 }
@@ -1076,6 +1080,7 @@ function clearRoomView() {
   if (!roomView) return;
   if (roomView.tv) { roomView.tv.on = false; roomView.tv.screen.visible = false; }
   roomView = null;
+  roomStyle?.leave(); cap.material.color.set(0x5d564f);
   iso.uniforms.uIsoCutA.value.set(0, 0, 0, 0); iso.uniforms.uIsoCutB.value.set(0, 0, 0, 0); iso.uniforms.uIsoCutY.value = 1e6;
   setCeilings(true);
   spaces.closeAll();
@@ -1104,6 +1109,7 @@ function roomPick(e) {
   return roomRay.intersectObjects(list, false).find((h) => h.point.y < clipPlane.constant) ?? null;
 }
 function roomClick(e) {
+  if (roomStyle?.active && !state.walking && !state.inside) return roomStyle.click(e, clipPlane.constant); // style rooms: their own toggles
   const h = roomPick(e);
   if (!h) return false;
   const tv = h.object.userData.tv;
@@ -1494,6 +1500,10 @@ canvas.addEventListener("pointermove", (e) => {
   } else ui.tooltip.classList.add("hidden");
 });
 canvas.addEventListener("pointerleave", () => { ui.tooltip.classList.add("hidden"); moodFocus = null; });
+// style rooms: hover outline + tooltip with the action ("Open the entry door") over their interactive objects
+canvas.addEventListener("pointermove", (e) => {
+  if (roomView && roomStyle?.active && e.pointerType === "mouse" && !state.walking && !state.inside) roomStyle.hover(e, clipPlane.constant);
+});
 // Room lights switch on around the point under the mouse (desktop). Ignores anything above the floor cut.
 let moodFocus = null, lastMove = null;
 canvas.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") lastMove = e; });
@@ -1688,7 +1698,7 @@ function frame(now) {
       if (k === 1) { const done = tween.done; tween = null; done?.(); }
     }
     controls.update();
-    if (roomView) { updateRoomCut(); if (spaces.animate(dt)) invalidate(80); }
+    if (roomView) { updateRoomCut(); if (spaces.animate(dt)) invalidate(80); if (roomStyle?.tick(dt, !lb.open)) invalidate(80); }
   }
   map.update(now);
   if ((creditT += dt) > 0.5) { // Google credit, shown while the map is visible
@@ -1782,6 +1792,13 @@ env.set("day", radius);
 // "inside" and the cap paints over the whole floor; the visible cap plane is isolated, so caps stay in the area)
 // The site plan + massing (`ground`) are not isolated either: they're shown / hidden whole (see "site in floor views"
 // in frame(): the Level 1 view keeps the ground and roads, other floor views hide them).
+// Style rooms (js/roomstyle.js): K.401/405/407/413/416 get their own materials and interactions; created before the
+// isolation / grade patches below, so their new materials get both
+let roomStyle = null;
+try {
+  if (USE_GLB) roomStyle = createRoomStyle({ scene, camera, renderer, objects: levelObjects, spaces, units, levelY, planToWorld, inPoly,
+    rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); } });
+} catch (e) { console.warn("room styles", e); }
 const notIsolated = new Set([...unitMeshes, ...bands, roomGlow, capMesh]);
 const inGround = (o) => { for (let p = o; p; p = p.parent) if (p === ground) return true; return false; };
 iso.patchScene(scene, (o) => notIsolated.has(o) || inGround(o));
@@ -1804,11 +1821,13 @@ mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
 window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
-  iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf };
+  iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap };
 mark("ready"); // handy for debugging in the browser console
 ready = true;
 requestAnimationFrame(frame);
 leaveHeroWhenReady(); // the loading-screen render fades into the 3D view (and the intro camera move starts)
+// #K405-light: open that style room (in that style) once the intro has faded
+{ const hu = roomStyle?.fromHash(); if (hu) setTimeout(() => selectUnit(hu), 3200); }
 ui.loading.classList.add("done");
 // the building is on screen (with each material's average colour): now fetch the photo textures
 setTimeout(startTextureLoading, 50); // (not tied to a drawn frame: a tab opened in the background draws none)

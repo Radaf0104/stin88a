@@ -57,7 +57,7 @@ function mergeLevel(doc, man) {
   const groups = new Map();
   for (const node of root.listNodes()) {
     const mesh = node.getMesh(), e = node.getExtras();
-    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set]) continue;
+    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set] || e.style_room) continue; // style rooms (06s) stay separate meshes for js/roomstyle.js
     const cls = e.kind === "ceiling" ? "ceiling" : BUILDING.has(e.kind) ? "building" : "furniture";
     const w = node.getWorldMatrix();
     const det = w[0] * (w[5] * w[10] - w[6] * w[9]) - w[1] * (w[4] * w[10] - w[6] * w[8]) + w[2] * (w[4] * w[9] - w[5] * w[8]);

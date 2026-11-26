@@ -26,19 +26,19 @@
   },
   {
    "L": "L3",
-   "gltf": 516,
-   "bin": 3464,
-   "meshes": 124,
-   "nodes": 187,
-   "tris": 233397
+   "gltf": 664,
+   "bin": 3420,
+   "meshes": 184,
+   "nodes": 251,
+   "tris": 230344
   },
   {
    "L": "L4",
-   "gltf": 390,
-   "bin": 3105,
-   "meshes": 86,
-   "nodes": 151,
-   "tris": 211189
+   "gltf": 941,
+   "bin": 2951,
+   "meshes": 266,
+   "nodes": 366,
+   "tris": 192866
   },
   {
    "L": "ROOF",
