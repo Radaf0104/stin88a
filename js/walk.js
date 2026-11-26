@@ -112,10 +112,11 @@ export function createWalker({ camera, dom, geometry, onExit }) {
     pos.copy(feet); pos.y += SEG + RADIUS + 0.05;
     vel.set(0, 0, 0); yaw = lookYaw; pitch = 0; spawnAt = { p: feet.clone(), yaw: lookYaw };
   }
-  function start(feet, lookYaw) {
+  function start(feet, lookYaw, lookPitch = 0) { // lookPitch < 0: start looking a little down
     active = true; keys.clear();
     camera.rotation.order = "YXZ";
     teleport(feet, lookYaw);
+    pitch = lookPitch;
   }
   function stop() {
     active = false; keys.clear();

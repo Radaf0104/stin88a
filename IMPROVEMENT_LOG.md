@@ -300,3 +300,14 @@ A stronger plaster factor (0.885) was tried: sunlit plaster barely moved (the Ne
 - `tools/build-siteplan.mjs`: box-projected metre UVs (stored (m+256)/512, 16-bit), `prune({keepAttributes})` keeps them. SITEPLAN 12 KB + 154 KB.
 - `js/main.js`: the site plan gets the shared procedural maps (no download): asphalt mottling (plaster, 3 m), slab joints on pads/retaining walls (porcelain, 1.2 m), soft lawn variation (plaster, 9 m), soil (plaster, 5 m).
 - Measured, hero camera: before 69/145/233, RGB 134/139/131 → after 65/145/232, RGB 130/136/130 (slight shadow-end texture, median unchanged). No console errors. Check render: tools/out/r18_site.jpg.
+
+## Round 19 — walk-mode first frame (lobbies, phone) and the corridor floor
+Found by rendering the walk start on every floor, desktop 1600x893 and phone 375x812 (2x):
+- **White hole at the stairs** (floors 2-4): the start faces the stair flight down, which lay below the isolation height cut and dissolved to white. `isolate.js` now takes "deep" areas (green channel of the mask + `uIsoDeepY`); walk mode in a lobby marks the stair outline deep down one storey (`spaces.stairWell()`), so the flight down shows. The rest of the floor below stays hidden.
+- **Phone field of view**: walking used 70 deg vertical everywhere, about 36 deg across on a portrait phone (a slot). `walkFov()` keeps ~50 deg across, at most 90 deg vertical, re-applied on resize/rotation. Desktop is unchanged at 70 deg.
+- **Start pitch**: stair starts look ~7 deg down (`walker.start(.., lookPitch)`), so less of the frame is the underside of the flight overhead.
+- **Floor 1 faced glass doors in a corner**: the "most open direction" used bare ray length, and glass lets rays through. It now scores walkable floor of the lobby ahead over a +-15 deg fan, so floor 1 opens facing the communal room.
+- **Corridor and lobby floors (M_teak_deck)**: the texture tiled every ~1.3 m, so knots were ~25 cm at eye level. `TEX_DENSITY` gives 2.5x UV density (texture clones share the same image, no download). Balconies get the same finer grain.
+- Measured: hero 65/145/232, RGB 130/136/130 (unchanged). GPU textures 68, no new geometry, all modules parse.
+- Renders: tools/out/r19_lobby_before.jpg / r19_L2_desk.jpg, r19_phone_before.jpg / r19_phone_after.jpg, r19_L1_desk.jpg, r19_L3_desk.jpg.
+- Not measured: first-frame time on a real phone (the browser pane was hidden, so timings there aren't meaningful).

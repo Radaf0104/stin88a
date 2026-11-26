@@ -330,10 +330,11 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
   }
   const stairRects = () => [STAIR, LIFT].map((r) => toW(rectPoly([r[0] - 0.35, r[1] - 0.35, r[2] + 0.35, r[3] + 0.35])));
   const isStairs = (p) => stairRects().some((poly) => inPoly(p.x, p.z, poly));
+  const stairWell = () => [toW(rectPoly(STAIR))]; // the stair flights only (not the lift shaft, nor what lies beside them)
 
   return {
     spaces, doors, rejected, doorGroup, state: st, lobby, unitSpace, spaceAt, levelOf, allowed, update, animate, toggle, click, doorMeshes,
-    setCurrent, closeAll, maskPolys, maskSub, stairStart, entranceStart, isStairs,
+    setCurrent, closeAll, maskPolys, maskSub, stairStart, entranceStart, isStairs, stairWell,
     footprint: () => { const b = buildingBox; return [[[b.min.x - 0.6, b.min.z - 0.6], [b.max.x + 0.6, b.min.z - 0.6], [b.max.x + 0.6, b.max.z + 0.6], [b.min.x - 0.6, b.max.z + 0.6]]]; },
   };
 }

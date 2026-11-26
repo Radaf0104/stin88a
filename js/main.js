@@ -380,6 +380,9 @@ const FACADE_TINT = {
   M_teak_timber: lin(0.96, 1.16, 1.41), M_teak_batten: lin(0.96, 1.16, 1.41), M_teak_deck: lin(1.05, 1.1, 1.12),
   M_plaster_cream: lin(0.95, 0.94, 0.985), // (stronger factors barely move sunlit plaster - tone shoulder + highlight lift - and only darken the shade)
 };
+// (round 19) texture density: the teak deck (balconies, and the corridor / communal floors) tiled every ~1.3 m, so its
+// knots read ~25 cm wide at eye level. x2.5 = real-sized grain. Same images (shared source), only the UV scale.
+const TEX_DENSITY = { M_teak_deck: 2.5 };
 let lightmapManifest = {};
 const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF"]; // (the 88A file's own SITE level is replaced by the masterplan site plan, see "Ground")
 if (USE_GLB) {
@@ -433,6 +436,12 @@ if (USE_GLB) {
           // orange (#a6724c vs #a0846b), the sunlit plaster a touch bright / yellow (#f4e9d2 vs #e7dbcf). Factor = render / ours.
           const tint = FACADE_TINT[name];
           if (tint && o.material.color) o.material.color.multiply(new THREE.Color().setRGB(...tint, THREE.LinearSRGBColorSpace));
+          const k = TEX_DENSITY[name];
+          if (k) for (const slot of ["map", "normalMap", "roughnessMap", "metalnessMap", "bumpMap"]) {
+            const t = o.material[slot]; if (!t) continue;
+            const c = t.clone(); c.repeat.multiplyScalar(k); c.offset.multiplyScalar(k); // uv' = k * (uv * 256 - 128)
+            o.material[slot] = c;
+          }
         }
       }
       o.castShadow = !o.material.transparent; o.receiveShadow = true;
@@ -1392,11 +1401,19 @@ const stairStartAt = (l) => {
   const eye = new THREE.Vector3(s.x, levelY[l] + 1.5, s.z), fwd = new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw));
   const hit = walker.raycastAll(new THREE.Ray(eye, fwd)).find((q) => q.distance > 0.05);
   if (hit && hit.distance < 1.6) { // nose to a wall (e.g. the stair enclosure): turn to the most open direction
-    let best = s.yaw, far = 0;
-    for (let a = 0; a < 16; a++) {
-      const yaw = s.yaw + (a / 16) * Math.PI * 2, d = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const h = walker.raycastAll(new THREE.Ray(eye, d)).find((q) => q.distance > 0.05), dist = h ? h.distance : 50;
-      if (dist > far) { far = dist; best = yaw; }
+    // "open" = walkable floor of this space ahead (to the first wall), over a +-15 deg fan: glass doors and windows
+    // let rays through, so a bare ray length would pick a corner by the glazing (round 19)
+    const open = (yaw) => {
+      const d = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      const h = walker.raycastAll(new THREE.Ray(eye, d)).find((q) => q.distance > 0.05), lim = Math.min(h ? h.distance : 14, 14);
+      let m = 0;
+      for (let t = 0.3; t < lim; t += 0.3, m += 0.3) if (spaces.spaceAt(s.x + d.x * t, s.z + d.z * t, l) !== s.space) break;
+      return m;
+    };
+    let best = s.yaw, far = -1;
+    for (let a = 0; a < 24; a++) {
+      const yaw = s.yaw + (a / 24) * Math.PI * 2, f = open(yaw - 0.26) + 2 * open(yaw) + open(yaw + 0.26);
+      if (f > far) { far = f; best = yaw; }
     }
     s.yaw = best;
   }
@@ -1415,11 +1432,15 @@ const stairStartRaw = (l) => spaces.stairStart(l, (x, z, cx, cz, strict) => {
 const isVilla = (u) => u.kind === "space" && /villa/i.test(u.space?.gallery ?? "");
 function applyWalkView() {
   const s = spaces.state.current; if (!s) return;
-  iso.setMask(spaces.maskPolys(), 0.25, levelY[s.level] - FLOOR_DEPTH, spaces.maskSub());
+  // the stairwell also shows the flight down (to the floor below), not a white hole at the top of the stairs
+  iso.setMask(spaces.maskPolys(), 0.25, levelY[s.level] - FLOOR_DEPTH, spaces.maskSub(), s.kind === "lobby" ? spaces.stairWell() : [], levelY[s.level] - 4.2);
   invalidate(200);
 }
 spaces.state.onChange = () => { applyWalkView(); updateRail(); };
 walker.setAllow((x, z) => !state.walking || spaces.allowed(x, z));
+// Walking field of view: 70 deg vertical on a landscape screen. On a portrait phone that leaves only ~35 deg across
+// (like looking through a slot), so there it opens up to keep ~50 deg across, at most 90 deg vertical.
+const walkFov = () => camera.aspect >= 1 ? 70 : Math.min(90, Math.max(70, (2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(25)) / camera.aspect) * 180) / Math.PI));
 function startWalk(start) {
   if (!start) return;
   if (state.inside) leaveInside();
@@ -1436,9 +1457,10 @@ function startWalk(start) {
   for (const m of unitMeshes) m.visible = false;
   for (const b of bands) b.visible = false;
   controls.enabled = false; tween = null;
-  camera.fov = 70; camera.updateProjectionMatrix();
+  camera.fov = walkFov(); camera.updateProjectionMatrix();
   const p = new THREE.Vector3(start.x, levelY[lvl] + 1, start.z);
-  walker.start(walker.floorBelow(p) ?? p.setY(levelY[lvl]), start.yaw);
+  // at the stairs: look ~7 deg down, so the first frame shows the flights and the floor rather than the flight overhead
+  walker.start(walker.floorBelow(p) ?? p.setY(levelY[lvl]), start.yaw, start.space.kind === "lobby" ? -0.12 : 0);
   document.body.classList.add("walking");
   renderUI();
   invalidate(300);
@@ -1731,6 +1753,7 @@ function resize() {
   invalidate(300);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
+  if (state.walking) camera.fov = walkFov(); // (a phone turned while walking)
   camera.updateProjectionMatrix();
   pano.renderer?.setSize(w, h, false);
   pano.camera.aspect = w / h;

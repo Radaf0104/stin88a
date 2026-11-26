@@ -24,6 +24,7 @@ export function createIsolation() {
     uIsoCutA: { value: new THREE.Vector4(0, 0, 0, 0) },  // two plan rectangles (x0, z0, x1, z1) ...
     uIsoCutB: { value: new THREE.Vector4(0, 0, 0, 0) },
     uIsoCutY: { value: 1e6 },                            // ... cut above this height (the floor stays)
+    uIsoDeepY: { value: -1e6 },                          // "deep" areas (green in the mask, e.g. the stairwell) go down to here
   };
   let rect = { x0: 0, z0: 0, w: 1, d: 1 };
 
@@ -36,7 +37,10 @@ export function createIsolation() {
 
   // polygons: arrays of [x, z] world points. expand (m) grows each one outwards (to include the walls around a room).
   // subtract: areas cut out again afterwards (not grown, so the walls around them stay), e.g. rooms seen from a corridor.
-  function setMask(polygons, expand = 0, minY = -1e6, subtract = []) {
+  // deep / deepY: areas that also show what lies below minY, down to deepY (walking: the stair flight down, instead of
+  // a white hole at the top of the stairs). Drawn in the green channel, so they never widen the plan mask itself.
+  function setMask(polygons, expand = 0, minY = -1e6, subtract = [], deep = [], deepY = minY) {
+    g.globalCompositeOperation = "source-over";
     g.fillStyle = "#000"; g.fillRect(0, 0, canvas.width, canvas.height);
     g.lineJoin = "miter"; g.miterLimit = 4;
     g.lineWidth = Math.max(1, (2 * expand * canvas.width) / rect.w);
@@ -45,8 +49,12 @@ export function createIsolation() {
     for (const poly of polygons) { if (!poly || poly.length < 3) continue; path(poly); g.fill(); if (expand > 0) g.stroke(); }
     g.fillStyle = "#000";
     for (const poly of subtract) { if (!poly || poly.length < 3) continue; path(poly); g.fill(); }
+    g.globalCompositeOperation = "lighter"; g.fillStyle = "#0f0";
+    for (const poly of deep) { if (!poly || poly.length < 3) continue; path(poly); g.fill(); }
+    g.globalCompositeOperation = "source-over";
     tex.needsUpdate = true;
     U.uIsoMinY.value = minY;
+    U.uIsoDeepY.value = deepY;
   }
 
   // Adds the mask test to a material (once). Keeps any shader changes the material already has (glass, battens…).
@@ -68,7 +76,7 @@ export function createIsolation() {
       sh.fragmentShader = sh.fragmentShader
         .replace("#include <common>", `#include <common>
           varying vec3 vIsoW;
-          uniform sampler2D uIsoMask; uniform vec4 uIsoRect; uniform float uIsoMinY; uniform float uIsoFade;
+          uniform sampler2D uIsoMask; uniform vec4 uIsoRect; uniform float uIsoMinY; uniform float uIsoFade; uniform float uIsoDeepY;
           uniform vec4 uIsoCutA; uniform vec4 uIsoCutB; uniform float uIsoCutY;`)
         .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
           if (vIsoW.y > uIsoCutY && (
@@ -76,8 +84,9 @@ export function createIsolation() {
               (vIsoW.x > uIsoCutB.x && vIsoW.x < uIsoCutB.z && vIsoW.z > uIsoCutB.y && vIsoW.z < uIsoCutB.w))) discard;
           if (uIsoFade > 0.0) {
             vec2 isoUv = (vIsoW.xz - uIsoRect.xy) / uIsoRect.zw;
-            float isoIn = (isoUv.x >= 0.0 && isoUv.x <= 1.0 && isoUv.y >= 0.0 && isoUv.y <= 1.0) ? texture2D(uIsoMask, isoUv).r : 0.0;
-            if (vIsoW.y < uIsoMinY) isoIn = 0.0;
+            vec2 isoM = (isoUv.x >= 0.0 && isoUv.x <= 1.0 && isoUv.y >= 0.0 && isoUv.y <= 1.0) ? texture2D(uIsoMask, isoUv).rg : vec2(0.0);
+            float isoIn = isoM.x;
+            if (vIsoW.y < uIsoMinY) isoIn = (isoM.y > 0.5 && vIsoW.y > uIsoDeepY) ? 1.0 : 0.0;
             // dissolve: a fixed screen pattern decides which pixels go first, so the outside melts away evenly
             float isoD = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
             if (isoIn < 0.5 && isoD < uIsoFade) discard;
