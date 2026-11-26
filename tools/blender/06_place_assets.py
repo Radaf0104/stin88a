@@ -53,6 +53,19 @@ def in_poly(x, y, pts):
 def room_at(x, y, z):
     r = next((r for r in model["rooms"] if abs(z - r["z"]) < 1.5 and in_poly(x, y, r["outline"])), None)
     return r["name"].strip() if r else ""
+def outline_dist(room, z, p, d):
+    """distance from p (x, y) along the unit direction d to the room's Revit outline (the inside face of its walls and
+    glazing), or 6.0 - doors and glass are not in the shell BVH, so rays alone ran out through the balcony door"""
+    r = next((r for r in model["rooms"] if r["name"].strip() == room and abs(z - r["z"]) < 1.5), None)
+    if not r: return 6.0
+    best, pts = 6.0, r["outline"]
+    for i in range(len(pts)):
+        (ax, ay), (bx, by) = pts[i - 1], pts[i]
+        ex, ey = bx - ax, by - ay; den = d[0] * ey - d[1] * ex
+        if abs(den) < 1e-9: continue
+        t = ((ax - p[0]) * ey - (ay - p[1]) * ex) / den; u = ((ax - p[0]) * d[1] - (ay - p[1]) * d[0]) / den
+        if t > 1e-4 and -1e-6 <= u <= 1 + 1e-6: best = min(best, t)
+    return best
 def clean_mat(m):
     if m is None: return None
     name = common.clean_material(m.name, mmap) or "M_drop"
@@ -398,7 +411,8 @@ for key, (first, insts) in protos.items():
             for s in (1, -1):
                 d = [0, 0, 0]; d[cross] = s
                 p0 = c.copy(); p0[long_ax] = c[long_ax] - bc[long_ax] + cl[long_ax]; p0[cross] = c[cross] - bc[cross] + cl[cross]
-                side[s] = wall_dist((p0.x, p0.y, z), d)
+                # the nearer of the walls (shell) and the room's outline: the balcony door is not part of the shell
+                side[s] = min(wall_dist((p0.x, p0.y, z), d), outline_dist(room0, z - 0.5, (p0.x, p0.y), d[:2]))
             # slide the bed across so the free wall length is shared evenly: room for an end table on both sides if
             # the wall is long enough (the Revit bed sat off-centre, against the bathroom wall)
             span = side[1] + side[-1]; need = W / 2 + 0.05 + 0.40 + 0.02
@@ -464,6 +478,44 @@ for key, (first, insts) in protos.items():
     r = report.setdefault(fam, {"treatment": t, "copies": 0, "tris_each_before": tris(first), "tris_each_after": sum(len(p.vertices) - 2 for p in me.polygons)})
     r["copies"] += len(insts)
 
+# 3.5 m rooms / suites: the Revit joinery still holds the old bed set-up along the head wall - a 1.10 m wall panel and a
+# 0.25 m ledge, now buried in the new bed and doubling its backdrop (two surfaces in one place flicker). Loose parts of
+# joinery that lie entirely in the strip behind the new bed (0.5 m from the head wall, the bed's width + end tables,
+# below 1.3 m) are removed; everything else of those objects (the desk along the TV wall, the wardrobe) stays.
+def loose_parts(me):
+    bm = bmesh.new(); bm.from_mesh(me); bm.verts.ensure_lookup_table()
+    seen, parts = set(), []
+    for v in bm.verts:
+        if v.index in seen: continue
+        stack, comp = [v], []; seen.add(v.index)
+        while stack:
+            a = stack.pop(); comp.append(a.index)
+            for e in a.link_edges:
+                b = e.other_vert(a)
+                if b.index not in seen: seen.add(b.index); stack.append(b)
+        parts.append(comp)
+    bm.free(); return parts
+n_removed = 0
+for bed in [o for o in placed if o.get("kind") == "bed" and UNIT_TYPE.get(o.get("room", "")) in ("deluxe", "suite") and "head_dir" in o]:
+    hd = Vector(bed["head_dir"]); fc = Vector(bed["frame_center"]); W, Lg = bed["frame_size"]
+    ax = 0 if abs(hd.x) > abs(hd.y) else 1; cr = 1 - ax; sgn = 1 if hd[ax] > 0 else -1
+    wall = fc[ax] + sgn * (Lg / 2 + 0.05)
+    lo_h, hi_h = sorted((wall - sgn * 0.5, wall + sgn * 0.08)); half = W / 2 + 0.55
+    for o in [o for o in placed if o.get("room") == bed.get("room") and o.get("level") == bed.get("level") and o.type == "MESH"
+              and re.match(r"^(casework|furniture)", o.get("kind", ""))]:
+        V = verts_of(o); parts = loose_parts(o.data); drop = []
+        for comp in parts:
+            P = V[comp]; pmn, pmx = P.min(0), P.max(0)
+            if pmn[ax] >= lo_h - 0.02 and pmx[ax] <= hi_h + 0.02 and pmn[cr] >= fc[cr] - half - 0.2 and pmx[cr] <= fc[cr] + half + 0.2 \
+               and pmx[2] - fc[2] < 1.3: drop += comp
+        if not drop: continue
+        if len(drop) == len(V): bpy.data.objects.remove(o); placed.remove(o); n_removed += 1; continue
+        o.data = o.data.copy()   # this copy only (Revit joinery meshes are shared between rooms)
+        bm = bmesh.new(); bm.from_mesh(o.data); bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[bm.verts[i] for i in drop], context="VERTS"); bm.to_mesh(o.data); bm.free()
+        n_removed += 1
+log("old bed joinery removed behind %d piece(s) in the 3.5 m rooms / suites" % n_removed)
+
 # office chairs: Poly Haven modern_arm_chair_01 at the Revit chair positions (model.json "proxies")
 if A["chair"]:
     before = set(bpy.data.objects)
@@ -492,19 +544,28 @@ if A["chair"]:
         mw = np.array(o.matrix_world); n3 = np.linalg.inv(mw[:3, :3]).T
         nw = nr.reshape(-1, 3) @ n3.T; nw /= np.maximum(np.linalg.norm(nw, axis=1, keepdims=True), 1e-9)
         k = (nw[:, 2] > 0.9) & (ar > 0.04)
-        if k.any(): desks.append(ce.reshape(-1, 3)[k] @ mw[:3, :3].T + mw[:3, 3])
-    desks = np.concatenate(desks) if desks else np.zeros((0, 3))
+        if not k.any(): continue
+        # each desk-top face as its footprint (x0, y0, x1, y1, z): a long desk's centre can be far to one side of the
+        # chair, so the direction is taken to the nearest point of the top, not to its centre
+        for i in np.nonzero(k)[0]:
+            P = np.array([mw[:3, :3] @ me_v + mw[:3, 3] for me_v in (np.array(o.data.vertices[j].co) for j in pm[int(i)].vertices)])
+            desks.append((P[:, 0].min(), P[:, 1].min(), P[:, 0].max(), P[:, 1].max(), P[:, 2].mean()))
+    desks = np.array(desks) if desks else np.zeros((0, 5))
     def desk_dir(p):
-        """unit direction (snapped to x / y) from the chair at p towards the nearest desk top, or None"""
+        """unit direction (snapped to x / y) from the chair at p towards the nearest point of the nearest desk top"""
         if not len(desks): return None
-        dz = desks[:, 2] - p.z
+        dz = desks[:, 4] - p.z
         cand = desks[(dz > 0.65) & (dz < 0.85)]
         if not len(cand): return None
-        d2 = ((cand[:, :2] - (p.x, p.y)) ** 2).sum(1); k = int(d2.argmin())
+        near = np.stack([np.clip(p.x, cand[:, 0], cand[:, 2]), np.clip(p.y, cand[:, 1], cand[:, 3])], 1)
+        d2 = ((near - (p.x, p.y)) ** 2).sum(1); k = int(d2.argmin())
         if d2[k] > 1.3 ** 2: return None
-        v = cand[k, :2] - (p.x, p.y)
+        v = near[k] - (p.x, p.y)
+        if abs(v[0]) < 1e-6 and abs(v[1]) < 1e-6: return None   # standing over it: keep the Revit direction
         return (math.copysign(1, v[0]), 0) if abs(v[0]) > abs(v[1]) else (0, math.copysign(1, v[1]))
-    n_turned = 0
+    n_turned = n_tucked = 0
+    # half the chair's depth along its facing direction (the mesh is centred on its footprint)
+    fwd = np.array([math.cos(chair_yaw0), math.sin(chair_yaw0)]); chair_half = float(np.abs(CV[:, :2] @ fwd).max())
     for o in [o for o in bpy.data.objects if o not in before]: bpy.data.objects.remove(o)
     n = 0
     for px in model.get("proxies", []):
@@ -516,12 +577,18 @@ if A["chair"]:
             ob = bpy.data.objects.new("%s_%s_chair" % (L, re.sub(r"[^A-Za-z0-9]", "", room) or "x"), me)
             dd = desk_dir(p)
             if dd is not None:   # face the desk (the Revit chair's own axes are 90° off from this model's)
+                if UNIT_TYPE.get(room) in ("deluxe", "suite"):
+                    # 3.5 m rooms: the desk is a thin shelf at 0.65 m - the chair (arms 0.62 m) slides under it, which
+                    # leaves ~0.6 m to walk between the chair and the foot of the bed on the way to the balcony
+                    room_d = wall_dist((p.x, p.y, p.z + 0.5), (dd[0], dd[1], 0))
+                    push = max(0.0, min(0.4, room_d - chair_half - 0.06))
+                    p = p + Vector((dd[0] * push, dd[1] * push, 0)); n_tucked += 1
                 M = Matrix.Translation(p) @ Matrix.Rotation(math.atan2(dd[1], dd[0]) - chair_yaw0, 4, "Z"); n_turned += 1
             ob.matrix_world = M
             for k, v in src.items(): ob[k] = v
             ob["room"] = room; ob["kind"] = "chair"; ob["level"] = L; ob["bathroom"] = False; ob["tv"] = False; ob["collide"] = False
             bpy.data.collections[L].objects.link(ob); placed.append(ob); n += 1
-    log("chairs: %d placed, %d turned to face their desk" % (n, n_turned))
+    log("chairs: %d placed, %d turned to face their desk, %d slid under the desk (3.5 m rooms)" % (n, n_turned, n_tucked))
     report["Plover Office Chair"] = {"treatment": "polyhaven modern_arm_chair_01", "copies": n, "tris_each_before": 355000, "tris_each_after": n1}
 
 # ---------- clean up the import, report ----------

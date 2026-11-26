@@ -45,21 +45,22 @@ SPEC = {
     "M_concrete":      ({"diff": site("concrete_floor_worn_001", "diff"), "nor": site("concrete_floor_worn_001", "nor"), "rough": site("concrete_floor_worn_001", "rough")}, 2.0, "B8B3AB", (0.8, 0.95), 0, 0.06),
     # room floors: light, smooth polished concrete (room3 interior renders)
     "M_tile_floor":    ({"diff": ph("smooth_concrete_floor", "diff"), "nor": ph("smooth_concrete_floor", "nor"), "rough": ph("smooth_concrete_floor", "rough")}, 2.0, "C8C0B4", (0.25, 0.45), 0, 0.03),
-    "M_fabric_curtain": ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "A89A85", (0.85, 1.0), 0, 0.0),
-    "M_fabric_sage":   ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "8F9877", (0.85, 1.0), 0, 0.0),
+    "M_fabric_curtain": ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "CFC3B1", (0.85, 1.0), 0, 0.0),
+    "M_fabric_sage":   ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "7E5F49", (0.85, 1.0), 0, 0.0),
     # desk chair upholstery: grey fabric like the room3 renders (the Poly Haven chair comes in black leather)
-    "modern_arm_chair_01_pillow": ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "8A8580", (0.85, 1.0), 0, 0.0),
-    "M_rug":           ("rug", 2.0, "DCD5CA", (0.9, 1.0), 0, 0.0),
+    "modern_arm_chair_01_pillow": ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "8E8174", (0.85, 1.0), 0, 0.0),
+    "M_rug":           ("rug", 2.0, "C9BBA5", (0.9, 1.0), 0, 0.0),
     "M_tile_wall":     ({"diff": ph("long_white_tiles", "diff"), "nor": ph("long_white_tiles", "nor"), "rough": ph("long_white_tiles", "rough")}, 1.27, "EFEDE8", (0.15, 0.3), 0, 0.0),
     "M_teak_timber":   ({"diff": ph("teak_veneer", "diff"), "nor": ph("teak_veneer", "nor"), "rough": ph("teak_veneer", "rough")}, 1.0, "A88A68", (0.5, 0.7), 0, 0.04),  # honey teak (r02 / r11)
     "M_teak_deck":     ({"diff": ph("teak_veneer", "diff"), "nor": ph("teak_veneer", "nor"), "rough": ph("teak_veneer", "rough")}, 1.0, "8A6A50", (0.6, 0.8), 0, 0.05),
+    # (2026-11-26: fabrics / walnut shifted to the palette of the client render 3.jpg - linen, mocha, oat, timber A0846B)
     # interior joinery, headboard wall, doors: mid-brown walnut with a straight grain (room3 interior renders)
-    "M_wood_light":    ({"diff": ph("walnut_veneer", "diff"), "nor": ph("walnut_veneer", "nor"), "rough": ph("walnut_veneer", "rough")}, 1.8, "8C6A4E", (0.4, 0.6), 0, 0.02),
+    "M_wood_light":    ({"diff": ph("walnut_veneer", "diff"), "nor": ph("walnut_veneer", "nor"), "rough": ph("walnut_veneer", "rough")}, 1.8, "967659", (0.4, 0.6), 0, 0.02),
     "M_stone_marble":  ({"diff": site("marble_01", "diff"), "nor": site("marble_01", "nor"), "rough": site("marble_01", "rough")}, 1.0, "9C9A96", (0.15, 0.3), 0, 0.0),
     "M_site_paving":   ({"diff": site("asphalt_02", "diff"), "nor": site("asphalt_02", "nor"), "rough": site("asphalt_02", "rough")}, 3.0, "8C8A84", (0.85, 1.0), 0, 0.05),
     "M_fabric_bedding": ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "E4DCCD", (0.85, 1.0), 0, 0.0),
     "M_fabric_sheet":  ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "EFEDE7", (0.85, 1.0), 0, 0.0),
-    "M_fabric_throw":  ("stripes", 0.5, "E6DFD2", (0.85, 1.0), 0, 0.0),   # cream throw with taupe stripes
+    "M_fabric_throw":  ("stripes", 0.5, "8A6B53", (0.85, 1.0), 0, 0.0),   # cream throw with taupe stripes
     "M_fabric_sofa":   ({"diff": ph("rough_linen", "diff"), "nor": ph("rough_linen", "nor"), "rough": ph("rough_linen", "rough")}, 0.27, "8E8A84", (0.85, 1.0), 0, 0.0),
     "M_metal_brushed": ("brushed", 0.5, "A8A8A6", (0.25, 0.4), 1, 0.0),
 }

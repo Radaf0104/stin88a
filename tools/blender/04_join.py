@@ -51,6 +51,67 @@ for m in [m for m in bpy.data.materials if m.name not in clean and m.users == 0]
 log("clean materials", len(clean), "unmapped Revit names:", sorted(unmapped) or "none")
 
 # ---- door leaves ----
+# Balcony doors of the rental rooms: Revit has a 2.35 m sliding glass door whose single 2.2 m panel, when the site
+# slid it open, travelled straight through the side wall (and the curtain). They become French doors instead: two
+# 0.8 m glass leaves in the middle, hinged on their outer edges, opening OUT onto the 0.9 m deep balcony (opening in,
+# they would hit the bed and the desk chair); the glass either side stays as fixed side lights.
+FRENCH_LEAF = 0.80
+_model = common.model_json()
+def _in_poly(x, y, pts):
+    c = False
+    for i in range(len(pts)):
+        (xi, yi), (xj, yj) = pts[i], pts[i - 1]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi: c = not c
+    return c
+def _room_name(x, y, z):
+    r = next((r for r in _model["rooms"] if abs(z - r["z"]) < 1.5 and _in_poly(x, y, r["outline"])), None)
+    return r["name"].strip() if r else ""
+def balcony_room(o, mn, mx, thin):
+    """a rental room ("K.xxx") on one side of the door and no room (the balcony) on the other"""
+    c = (mn + mx) / 2; names = []
+    for s in (-1, 1):
+        p = c.copy(); p[thin] += s * 0.45
+        names.append(_room_name(p[0], p[1], mn[2] + 0.05))
+    import re
+    return any(re.match(r"^K\.\d{3}$", n) for n in names) and "" in names
+def split_french(o, mn, mx, thin, wide):
+    me = o.data
+    cen = (mn[wide] + mx[wide]) / 2
+    cuts = (cen - FRENCH_LEAF, cen, cen + FRENCH_LEAF)
+    bm = bmesh.new(); bm.from_mesh(me)
+    for cut in cuts:   # cut the panel(s) where the leaves begin / meet / end
+        pl = Vector((0, 0, 0)); pl[wide] = cut; no = Vector((0, 0, 0)); no[wide] = 1
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=pl, plane_no=no)
+    bm.faces.ensure_lookup_table()
+    leaves = {-1: [], 1: []}
+    for f in bm.faces:
+        c = f.calc_center_median(); zs = [v.co.z for v in f.verts]
+        if not (mn[2] + 0.02 < c.z < mx[2] - 0.07 and max(zs) < mx[2] - 0.04): continue
+        if cuts[0] < c[wide] < cuts[1]: leaves[-1].append(f.index)
+        elif cuts[1] < c[wide] < cuts[2]: leaves[1].append(f.index)
+    if not leaves[-1] or not leaves[1]: bm.free(); return None
+    made = []
+    for side, idx in leaves.items():
+        lb = bm.copy(); lb.faces.ensure_lookup_table(); keep = set(idx)
+        bmesh.ops.delete(lb, geom=[f for f in lb.faces if f.index not in keep], context="FACES")
+        hinge = Vector((0, 0, 0)); hinge[wide] = cen + side * FRENCH_LEAF; hinge[thin] = (mn[thin] + mx[thin]) / 2; hinge.z = mn[2]
+        lme = bpy.data.meshes.new("door_leaf"); lb.to_mesh(lme); lb.free()
+        for m in me.materials: lme.materials.append(m)
+        lme.transform(Matrix.Translation(-hinge))
+        lo = bpy.data.objects.new("%s_door_%s_%s" % (o["level"], o["revit_id"], "a" if side < 0 else "b"), lme)
+        lo.location = hinge
+        for k in ("revit_id", "revit_name", "storey", "level"): lo[k] = o[k]
+        lo["category"] = "Doors"; lo["kind"] = "door"; lo["collide"] = False
+        lo["door_width"] = FRENCH_LEAF; lo["door_height"] = float(mx[2] - mn[2]); lo["door_slide"] = False
+        lo["door_wide_axis"] = "xy"[wide]
+        lo["door_hinge"] = "min" if side < 0 else "max"   # the leaf runs from its hinge towards the middle
+        lo["door_pair"] = str(o["revit_id"]); lo["door_out"] = True   # opens onto the balcony
+        for c in o.users_collection: c.objects.link(lo)
+        made.append(lo)
+    gone = set(leaves[-1]) | set(leaves[1])
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index in gone], context="FACES")
+    bm.to_mesh(me); bm.free()
+    return made[0]
 def split_door(o):
     me = o.data
     co = np.empty(len(me.vertices) * 3); me.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
@@ -64,6 +125,9 @@ def split_door(o):
     if len(leaf) < 2: return None
     glass = sum(me.polygons[i].area for i in leaf if "glass" in (me.materials[me.polygons[i].material_index].name.lower()))
     area = sum(me.polygons[i].area for i in leaf)
+    to_balcony = glass > 0.4 * area and balcony_room(o, mn, mx, thin)
+    if to_balcony and d[wide] > 2 * FRENCH_LEAF + 0.3:
+        return split_french(o, mn, mx, thin, wide)
     hinge = Vector((0, 0, 0)); hinge[wide] = mn[wide] + 0.03; hinge[thin] = (mn[thin] + mx[thin]) / 2; hinge.z = mn[2]
     bm = bmesh.new(); bm.from_mesh(me); bm.faces.ensure_lookup_table()
     lb = bm.copy(); lb.faces.ensure_lookup_table()
@@ -80,6 +144,8 @@ def split_door(o):
     lo["category"] = "Doors"; lo["kind"] = "door"; lo["collide"] = False
     lo["door_width"] = float(d[wide]); lo["door_height"] = float(d[2]); lo["door_slide"] = bool(glass > 0.4 * area)
     lo["door_wide_axis"] = "xy"[wide]
+    if to_balcony:   # a narrow balcony door (~1 m): one glass leaf swinging out instead of sliding through the wall
+        lo["door_slide"] = False; lo["door_out"] = True
     for c in o.users_collection: c.objects.link(lo)
     return lo
 n_leaf = n_notdoor = 0

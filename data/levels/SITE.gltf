@@ -99,7 +99,7 @@
         "EXT_meshopt_compression": {
           "buffer": 0,
           "byteOffset": 0,
-          "byteLength": 5257,
+          "byteLength": 5258,
           "mode": "TRIANGLES",
           "byteStride": 2,
           "count": 15000
@@ -133,7 +133,7 @@
         "EXT_meshopt_compression": {
           "buffer": 0,
           "byteOffset": 5536,
-          "byteLength": 33877,
+          "byteLength": 33891,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
           "count": 6299
@@ -149,7 +149,7 @@
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 39416,
+          "byteOffset": 39428,
           "byteLength": 218,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
@@ -166,7 +166,7 @@
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 39636,
+          "byteOffset": 39648,
           "byteLength": 74,
           "mode": "ATTRIBUTES",
           "filter": "OCTAHEDRAL",
@@ -184,8 +184,8 @@
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 39712,
-          "byteLength": 22079,
+          "byteOffset": 39724,
+          "byteLength": 22069,
           "mode": "ATTRIBUTES",
           "byteStride": 8,
           "count": 6299
@@ -201,8 +201,8 @@
       "extensions": {
         "EXT_meshopt_compression": {
           "buffer": 0,
-          "byteOffset": 61792,
-          "byteLength": 5953,
+          "byteOffset": 61796,
+          "byteLength": 5919,
           "mode": "ATTRIBUTES",
           "filter": "OCTAHEDRAL",
           "byteStride": 4,
@@ -265,7 +265,7 @@
   "buffers": [
     {
       "uri": "SITE.bin",
-      "byteLength": 67748
+      "byteLength": 67716
     },
     {
       "byteLength": 156700,
@@ -284,7 +284,8 @@
           "Concrete, Cast-in-Place gray",
           "CONCRETE",
           "Concrete, Precast",
-          "CONCRETE 1"
+          "CONCRETE 1",
+          "DefaultMaterial"
         ]
       },
       "doubleSided": true,

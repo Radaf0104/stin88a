@@ -6,14 +6,14 @@ The building, floors and rooms come straight from the Revit model. The look (360
 ```
 node serve.mjs
 ```
-Then open http://localhost:5173
+Then open http://localhost:5176 (V5 port; set `PORT` to change it)
 
 ## What the viewer does
-- Landing image → 3D building with camera pins for each exterior render
+- Full-screen landing render (`images/landing/hero-1200|2000.webp|jpg`, made with sharp), no buttons. Click, tap or Enter fades it into the 3D view over 1.8 s (`#hero` in `index.html` / `style.css` / `main.js`). Each exterior render in the gallery can fly the 3D view to its angle ("See this angle in 3D")
 - Floors 1–4: plan cut at 1.35 m with solid (stencil-capped) wall sections, a room list, colour-coded availability
 - Level 1 shared spaces (`spaces` in config, matched to Revit room names): communal living & dining, private villa
 - Room / space card → **Step inside**: eye-level fly-in with a warm room light, look-around only (can't leave the room), then the real interior renders open
-- Gallery tabs: Exterior · 3 m Room · 3.5 m Room · Facilities · Private Villa; EN/ID
+- Gallery tabs: Exterior (landscape renders only: r02, r03, r07, r08, r09 in `renders` in `js/config.js`) · 3 m Room · 3.5 m Room · Facilities · Private Villa; EN/ID
 - **Realistic materials** (`js/materials.js`): every Revit material is mapped to a preset (plaster, teak, stone tile, deck,
   fabric, brushed steel, chrome, porcelain, glass, water) with procedural textures in metres. Change a look by editing `presetFor()`.
 - **Sky & time of day** (`js/environment.js`): physical sky for Day / Golden hour, starry sky for Night; the sky is also the
@@ -33,10 +33,32 @@ Then open http://localhost:5173
 - **Adaptive resolution**: if moving frames stay slower than ~30 fps the resolution steps down (to 60 % at most), and
   steps back up when frames are fast again.
 
+## V5 additions (2026-11-26)
+- **Site plan from the masterplan:** `tools/build-siteplan.mjs` → `data/levels/SITEPLAN.gltf` (terrain, roads, pads, retaining walls
+  from Revit "STIN MASTERPLAN FINAL", exported by `tools/revit/export_siteplan.py`). Colours match the client render
+  (olive lawn, dark asphalt, pale concrete) in `LOOK`. In the white floor views, Level 1 keeps the site, blended to a light
+  plan palette (`SITE_PLAN_LIGHT` in `main.js`); other floors hide it.
+- **Massing of planned buildings:** `tools/build-massing.mjs` → `data/massing.json` → `js/massing.js`. Plain white extruded boxes:
+  boarding house on pads 1 and 2 (pad 2 = the client-marked L-shape over the lower terrace, explicit `footprint`), parking
+  building on pads 3 and 4. No labels, no toggle. The pad-1 box beside the main building hides when it blocks the view to
+  the building (`updateOcclusion`: 6 rays per drawn frame).
+- **Template rooms:** every guest room is furnished from one dressed template of its width: 3 m → K.405, 3.5 m → K.407,
+  4 m → K.413. K.301 and K.401 (3.67 m) are in the 3.5 m class.
+  - `tools/room-templates.mjs` → `data/room_templates.json` (width class, rotation, mirror and a 4×4 matrix per room,
+    anchored on the facade wall, mirrored by bathroom side).
+  - Blender: `06b_dress_room.py --rooms K.405,K.407,K.413` dresses them (LED strips, lamps, cushion, rug, curtains,
+    decimated plant, books). `06t_template_rooms.py` removes the other rooms' furniture and adds linked copies.
+  - Pipeline order: 06 → 06b → 06t → 06c → 07 `--skip-lm` → 08 → 12 → `node tools/pack-levels.mjs` (run in the `stin88a-v4`
+    pipeline workspace, then copy `data/levels/*` except `SITEPLAN.*` into V5).
+- **Doors:** hinged leaves load as pivot > leaf node > meshes. The loader walks up to the node with `kind` (`main.js`) and
+  `doorMeshes` traverses (`spaces.js`). 138 doors, 42 entrance.
+- **Look:** day light, sky and haze retuned to the client render. UI palette: timber #A07A52, charcoal #24262A (`style.css`).
+
 ## Real-world map (Google Photorealistic 3D Tiles)
-- **🌍 Map** swaps the lawn for Google's 3D surroundings at the plot (`site` in `js/config.js`: −6.614033, 106.887443).
+- **Not in use in V5:** the Map button was removed. The code in `js/map.js` stays, unused.
+- It swaps the lawn for Google's 3D surroundings at the plot (`site` in `js/config.js`: −6.614033, 106.887443).
 - Needs `googleMapsKey` in `js/config.js`: a Google Maps Platform key with **Map Tiles API** enabled, billing linked,
-  restricted to your site addresses (e.g. `http://localhost:5173/*` and your domain) and to the Map Tiles API only.
+  restricted to your site addresses (e.g. `http://localhost:5176/*` and your domain) and to the Map Tiles API only.
 - `site.northRotation` turns the surroundings to match true north (front faces ~164°); `site.groundLevel` sets where the
   terrain meets the model. The map pauses while a floor is cut (the plan cut would slice the hills).
 - Google's logo/credits are shown bottom-left while the map is on.
@@ -77,7 +99,7 @@ Then open http://localhost:5173
 |---|---|
 | `js/config.js` | Project name, tagline, **WhatsApp number**, **prices per room type**, 360° image per type |
 | `data/units.json` | One entry per room: `label`, `type` (standard / deluxe / suite), `status` (available / occupied), optional `price` override |
-| `images/renders/` + `renders` list in `js/config.js` | Exterior renders: landing image (first one), gallery, and numbered camera pins. Each has `az`/`el` (camera direction) so "See this angle in 3D" flies there. Add `thumbs/` copies (~320 px tall) for new ones. |
+| `images/renders/` + `renders` list in `js/config.js` | Exterior renders for the gallery (landscape images only; the landing page uses `images/landing/`). Each has `az`/`el` (camera direction) so "See this angle in 3D" flies there. Add `thumbs/` copies (~320 px tall) for new ones. |
 | `images/interiors/<set>/` + `galleries` in `js/config.js` | Interior photo sets: `room3` (3 m room), `room35` (3.5 m room), `shared` (living/dining, terrace, corridors), `villa`. Each room type's `gallery` decides which set its "Room photos" button opens; `corridors` adds that floor's corridor. |
 | `pano` on a room type | 360° render (2:1 equirectangular, e.g. 4096×2048 or larger) in `images/pano/`. Shows a "360° view" button on the room card and in the room bar when inside. In the 360° view, **Space** (or the "Walk around" button) switches to walk mode in that room, facing the window. `panoStart` = direction it opens facing (degrees), `panoPitch` = how far up/down people can look (45 hides warped ceilings/floors in AI-edited panoramas). Now set: 3 m Room → `images/pano/room3.webp` (Gemini-edited, 1024 px), 3.5 m Room → `images/pano/room35.jpg` (Topaz-upscaled, resized to 7200×3600, JPG quality 82, 1.7 MB). Replace both with upscaled 4096×2048 versions (same file names). |
 

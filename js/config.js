@@ -86,21 +86,15 @@ export const CONFIG = {
     },
   ],
 
-  // Exterior renders (images/renders/). The first one is the landing-page image.
+  // Exterior renders (images/renders/): landscape images only.
   // az / el = where the camera stands, in degrees: az 0 = south (terrace side), 90 = east, 180 = north, 270 = west;
   // el = height angle. dist = how far away (1 = normal). Used to fly the 3D view to the same angle as the render.
   renders: [
-    { file: "r01.jpg", title: { en: "Aerial view", id: "Tampak udara" }, az: -38, el: 36, dist: 2.2 },
     { file: "r02.jpg", title: { en: "Terrace facade", id: "Fasad sisi teras" }, az: 0, el: 3, dist: 1.6 },
     { file: "r03.jpg", title: { en: "Terrace facade · evening light", id: "Fasad sisi teras · sore" }, az: 0, el: 3, dist: 1.6 },
-    { file: "r04.jpg", title: { en: "Corner view", id: "Tampak sudut" }, az: 225, el: 6, dist: 1.7 },
-    { file: "r05.jpg", title: { en: "Corner view · terrace", id: "Tampak sudut · teras" }, az: 45, el: 6, dist: 1.7 },
-    { file: "r06.jpg", title: { en: "Communal terrace from above", id: "Teras komunal dari atas" }, az: 12, el: 38, dist: 1.2 },
     { file: "r07.jpg", title: { en: "Communal terrace", id: "Teras komunal" }, az: 65, el: 7, dist: 1.1 },
     { file: "r08.jpg", title: { en: "Upper floors", id: "Lantai atas" }, az: 160, el: 14, dist: 1.2 },
     { file: "r09.jpg", title: { en: "Rear facade", id: "Fasad belakang" }, az: 150, el: 6, dist: 1.7 },
-    { file: "r10.jpg", title: { en: "Villa house entrance", id: "Pintu masuk villa" }, az: 270, el: 4, dist: 1.4 },
-    { file: "r11.jpg", title: { en: "Balcony detail", id: "Detail balkon" }, az: 0, el: 22, dist: 0.9 },
   ],
 
   // Floors shown in the floor picker (Revit level index -> label).

@@ -86,10 +86,12 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
     const u = leaf.userData, wide = u.door_wide_axis === "x" ? 0 : 2, thin = wide === 0 ? 2 : 0;
     const width = u.door_width ?? (box.max.getComponent(wide) - box.min.getComponent(wide));
     const centerW = box.getCenter(new THREE.Vector3()).add(rp);
-    // the hinge is where the leaf object sits; along Revit y (three -z) it is the far end, so slides / swings flip
-    const dir = wide === 2 ? -1 : 1;
+    // the hinge is where the leaf object sits; along Revit y (three -z) it is the far end, so slides / swings flip.
+    // French balcony doors (tools/blender/04_join.py): the second leaf is hinged on its other end ("max"), so it turns
+    // the other way round to open to the same side; both leaves of a pair open together.
+    const dir = (wide === 2 ? -1 : 1) * (u.door_hinge === "max" ? -1 : 1);
     doors.push({ level: 0, pivot: leaf, slide: !!u.door_slide, thin, wide, width, box, centerW, k: 0, target: 0, sign: 1, role: "fixed", links: [],
-      hingeBase: leaf.position.getComponent(wide), slideDir: dir, swingFlip: dir });
+      hingeBase: leaf.position.getComponent(wide), slideDir: dir, swingFlip: dir, pair: u.door_pair ?? null, out: !!u.door_out });
   }
   for (const lvl of doorLeaves ? [] : new Set(doorChunks.map((c) => c.level))) {
     // all door triangles of this floor
@@ -289,11 +291,12 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
   // Room view: a click opens / closes any door of the room. Entrance doors swing into the room, bathroom doors into
   // the bathroom (away from the room's middle); balcony glass slides.
   function toggle(door, roomCenter) {
-    if (door.target === 1) { door.target = 0; return; }
+    const set = door.pair ? doors.filter((d) => d.pair === door.pair) : [door];   // French doors: both leaves
+    if (door.target === 1) { for (const d of set) d.target = 0; return; }
     const away = door.role === "entrance" ? door.centerW.clone().multiplyScalar(2).sub(roomCenter) : roomCenter;
-    door.sign = swingSign(door, away); door.target = 1;
+    for (const d of set) { d.sign = swingSign(d, away); d.target = 1; }
   }
-  const doorMeshes = () => doors.filter((d) => d.role === "entrance" && st.current && d.links.includes(st.current)).flatMap((d) => (d.pivot.isMesh ? [d.pivot] : d.pivot.children).map((m) => ((m.userData.door = d), m)));
+  const doorMeshes = () => doors.filter((d) => d.role === "entrance" && st.current && d.links.includes(st.current)).flatMap((d) => { const ms = []; d.pivot.traverse((m) => { if (m.isMesh) { m.userData.door = d; ms.push(m); } }); return ms; }); // (hinged leaves: pivot > leaf node > meshes)
 
   // where to stand
   // isFloor(x, z): is there solid floor at this level here? (not the stairwell or the lift shaft)

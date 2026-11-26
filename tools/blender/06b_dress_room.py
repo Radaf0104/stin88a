@@ -121,7 +121,8 @@ def dress(room_name):
         # green cushion in front of the pillows
         head_pt = fc + hd * (Lg / 2 - 0.42)
         bm = bmesh.new(); box(bm, (0.42, 0.13, 0.34), (0, 0, 0), 0.06, 4)
-        me3 = bpy.data.meshes.new("cushion"); bm.to_mesh(me3); bm.free(); me3.materials.append(mat("M_fabric_sage", (0.55, 0.60, 0.47), rough=0.95))
+        # (colour set in 08_materials.py SPEC: mocha since the 2026-11-26 palette from the client's render 3.jpg)
+        me3 = bpy.data.meshes.new("cushion"); bm.to_mesh(me3); bm.free(); me3.materials.append(mat("M_fabric_sage", (0.50, 0.38, 0.29), rough=0.95))
         for p in me3.polygons: p.use_smooth = True
         cu = new_obj("%s_%s_cushion" % (L, tag), me3, room_name, L, "cushion", lm)
         ang = math.atan2(side.y, side.x)
@@ -138,7 +139,7 @@ def dress(room_name):
         n = (corners[1] - corners[0]).cross(corners[2] - corners[1])
         if n.z < 0: corners.reverse()
         bm.faces.new([bm.verts.new(c) for c in corners])
-        me4 = bpy.data.meshes.new("rug"); bm.to_mesh(me4); bm.free(); me4.materials.append(mat("M_rug", (0.86, 0.83, 0.78), rough=1.0))
+        me4 = bpy.data.meshes.new("rug"); bm.to_mesh(me4); bm.free(); me4.materials.append(mat("M_rug", (0.78, 0.72, 0.63), rough=1.0))
         made.append(new_obj("%s_%s_rug" % (L, tag), me4, room_name, L, "rug", lm))
     # --- desk lamp: on the desk top (upward joinery faces 0.65-0.85 m), at the end furthest from the bed head ---
     desk_tops = []
@@ -175,7 +176,7 @@ def dress(room_name):
         rr = bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=0.07, matrix=Matrix.Translation((q[0], q[1], q[2] + 0.07)))
         for f in {f for v in rr["verts"] for f in v.link_faces}: f.material_index = 2
         me6 = bpy.data.meshes.new("console_decor"); bm.to_mesh(me6); bm.free()
-        for m in (mat("M_book_cream", (0.90, 0.87, 0.80)), mat("M_book_sage", (0.62, 0.66, 0.58)), mat("M_ceramic_vase", (0.93, 0.90, 0.85), rough=0.4)): me6.materials.append(m)
+        for m in (mat("M_book_cream", (0.90, 0.87, 0.80)), mat("M_book_timber", (0.63, 0.52, 0.42)), mat("M_ceramic_vase", (0.93, 0.90, 0.85), rough=0.4)): me6.materials.append(m)
         for p in me6.polygons: p.use_smooth = True
         made.append(new_obj("%s_%s_decor_console" % (L, tag), me6, room_name, L, "decor", lm))
         if A["plant"]:
@@ -189,6 +190,9 @@ def dress(room_name):
                 PV = np.array([v.co for v in pl.data.vertices]); k = 0.32 / max(1e-3, PV[:, 2].max() - PV[:, 2].min())
                 pl.data.transform(Matrix.Diagonal((k, k, k, 1)) @ Matrix.Translation((-PV[:, 0].mean(), -PV[:, 1].mean(), -PV[:, 2].min())))
                 q = at(0.0); pl.location = (q[0], q[1], q[2])
+                # 8.9k triangles is too much once the template is copied into every room (~110k per floor):
+                # decimate to ~15 % (applied by the glTF export, kept by the linked copies made in 06t)
+                dm = pl.modifiers.new("decimate", "DECIMATE"); dm.ratio = 0.15
                 for x in [x for x in bpy.data.objects if x not in before and x is not pl]: bpy.data.objects.remove(x)
                 for c in list(pl.users_collection): c.objects.unlink(pl)
                 bpy.data.collections[L].objects.link(pl); pl.name = "%s_%s_plant" % (L, tag)
@@ -222,7 +226,7 @@ def dress(room_name):
             for j in range(nz):
                 k = i * (nz + 1) + j
                 bm.faces.new((bm.verts[k], bm.verts[k + nz + 1], bm.verts[k + nz + 2], bm.verts[k + 1]))
-        me7 = bpy.data.meshes.new("curtain"); bm.to_mesh(me7); bm.free(); me7.materials.append(mat("M_fabric_curtain", (0.66, 0.60, 0.52), rough=0.95))
+        me7 = bpy.data.meshes.new("curtain"); bm.to_mesh(me7); bm.free(); me7.materials.append(mat("M_fabric_curtain", (0.82, 0.77, 0.69), rough=0.95))
         for p in me7.polygons: p.use_smooth = True
         made.append(new_obj("%s_%s_curtain" % (L, tag), me7, room_name, L, "curtain", lm))
     log("%s: %d dressing objects: %s" % (room_name, len(made), sorted({o.get("kind") for o in made})))

@@ -1,0 +1,519 @@
+{
+  "asset": {
+    "generator": "glTF-Transform v4.5.1",
+    "version": "2.0"
+  },
+  "accessors": [
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 1182,
+      "normalized": false,
+      "byteOffset": 0,
+      "bufferView": 0
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 78831,
+      "normalized": false,
+      "byteOffset": 2364,
+      "bufferView": 0
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 2580,
+      "normalized": false,
+      "byteOffset": 160026,
+      "bufferView": 0
+    },
+    {
+      "type": "SCALAR",
+      "componentType": 5123,
+      "count": 459,
+      "normalized": false,
+      "byteOffset": 165186,
+      "bufferView": 0
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 607,
+      "max": [
+        26307,
+        2184,
+        32767
+      ],
+      "min": [
+        -26307,
+        -2184,
+        -32767
+      ],
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 1
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 607,
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 2
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 14774,
+      "max": [
+        32767,
+        2148,
+        32767
+      ],
+      "min": [
+        -32767,
+        -2148,
+        -32767
+      ],
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 3
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 14774,
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 4
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 1070,
+      "max": [
+        26307,
+        2196,
+        32767
+      ],
+      "min": [
+        -26307,
+        -2196,
+        -32767
+      ],
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 5
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 1070,
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 6
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5122,
+      "count": 273,
+      "max": [
+        32615,
+        3956,
+        32767
+      ],
+      "min": [
+        -32615,
+        -3956,
+        -32767
+      ],
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 7
+    },
+    {
+      "type": "VEC3",
+      "componentType": 5120,
+      "count": 273,
+      "normalized": true,
+      "byteOffset": 0,
+      "bufferView": 8
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 1,
+      "byteOffset": 0,
+      "byteLength": 166104,
+      "target": 34963,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 0,
+          "byteLength": 31847,
+          "mode": "TRIANGLES",
+          "byteStride": 2,
+          "count": 83052
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 166104,
+      "byteLength": 4856,
+      "target": 34962,
+      "byteStride": 8,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 31848,
+          "byteLength": 2638,
+          "mode": "ATTRIBUTES",
+          "byteStride": 8,
+          "count": 607
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 170960,
+      "byteLength": 2428,
+      "target": 34962,
+      "byteStride": 4,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 34488,
+          "byteLength": 552,
+          "mode": "ATTRIBUTES",
+          "filter": "OCTAHEDRAL",
+          "byteStride": 4,
+          "count": 607
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 173388,
+      "byteLength": 118192,
+      "target": 34962,
+      "byteStride": 8,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 35040,
+          "byteLength": 61141,
+          "mode": "ATTRIBUTES",
+          "byteStride": 8,
+          "count": 14774
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 291580,
+      "byteLength": 59096,
+      "target": 34962,
+      "byteStride": 4,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 96184,
+          "byteLength": 8300,
+          "mode": "ATTRIBUTES",
+          "filter": "OCTAHEDRAL",
+          "byteStride": 4,
+          "count": 14774
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 350676,
+      "byteLength": 8560,
+      "target": 34962,
+      "byteStride": 8,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 104484,
+          "byteLength": 3980,
+          "mode": "ATTRIBUTES",
+          "byteStride": 8,
+          "count": 1070
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 359236,
+      "byteLength": 4280,
+      "target": 34962,
+      "byteStride": 4,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 108464,
+          "byteLength": 742,
+          "mode": "ATTRIBUTES",
+          "filter": "OCTAHEDRAL",
+          "byteStride": 4,
+          "count": 1070
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 363516,
+      "byteLength": 2184,
+      "target": 34962,
+      "byteStride": 8,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 109208,
+          "byteLength": 1300,
+          "mode": "ATTRIBUTES",
+          "byteStride": 8,
+          "count": 273
+        }
+      }
+    },
+    {
+      "buffer": 1,
+      "byteOffset": 365700,
+      "byteLength": 1092,
+      "target": 34962,
+      "byteStride": 4,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "buffer": 0,
+          "byteOffset": 110508,
+          "byteLength": 298,
+          "mode": "ATTRIBUTES",
+          "filter": "OCTAHEDRAL",
+          "byteStride": 4,
+          "count": 273
+        }
+      }
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "SITEPLAN.bin",
+      "byteLength": 110808
+    },
+    {
+      "byteLength": 366792,
+      "extensions": {
+        "EXT_meshopt_compression": {
+          "fallback": true
+        }
+      }
+    }
+  ],
+  "materials": [
+    {
+      "name": "SITE_soil",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.147318999244498,
+          0.11280478678675158,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0
+      }
+    },
+    {
+      "name": "SITE_grass",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05925352111727415,
+          0.07323895587840543,
+          0.01532520332062848,
+          1
+        ],
+        "metallicFactor": 0
+      }
+    },
+    {
+      "name": "SITE_road",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.039681909478526005,
+          0.041435575208927454,
+          0.04696420068912289,
+          1
+        ],
+        "roughnessFactor": 0.95,
+        "metallicFactor": 0
+      }
+    },
+    {
+      "name": "SITE_pad",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.29569980462568246,
+          0.29014254460057504,
+          0.27383841647314605,
+          1
+        ],
+        "roughnessFactor": 0.9,
+        "metallicFactor": 0
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "siteplan_soil",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5
+          },
+          "mode": 4,
+          "material": 0,
+          "indices": 0
+        }
+      ]
+    },
+    {
+      "name": "siteplan_grass",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "mode": 4,
+          "material": 1,
+          "indices": 1
+        }
+      ]
+    },
+    {
+      "name": "siteplan_road",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 8,
+            "NORMAL": 9
+          },
+          "mode": 4,
+          "material": 2,
+          "indices": 2
+        }
+      ]
+    },
+    {
+      "name": "siteplan_pad",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 10,
+            "NORMAL": 11
+          },
+          "mode": 4,
+          "material": 3,
+          "indices": 3
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "siteplan_soil",
+      "extras": {
+        "kind": "siteplan",
+        "surface": "soil"
+      },
+      "translation": [
+        20.29849624633789,
+        -1.0234999656677246,
+        -36.18800354003906
+      ],
+      "scale": [
+        138.49400329589844,
+        138.49400329589844,
+        138.49400329589844
+      ],
+      "mesh": 0
+    },
+    {
+      "name": "siteplan_grass",
+      "extras": {
+        "kind": "siteplan",
+        "surface": "grass"
+      },
+      "translation": [
+        -9.082504272460938,
+        -0.9635000228881836,
+        -34.25800323486328
+      ],
+      "scale": [
+        141.60900115966797,
+        141.60900115966797,
+        141.60900115966797
+      ],
+      "mesh": 1
+    },
+    {
+      "name": "siteplan_road",
+      "extras": {
+        "kind": "siteplan",
+        "surface": "road"
+      },
+      "translation": [
+        20.29849624633789,
+        -0.9635000228881836,
+        -36.18800354003906
+      ],
+      "scale": [
+        138.49400329589844,
+        138.49400329589844,
+        138.49400329589844
+      ],
+      "mesh": 2
+    },
+    {
+      "name": "siteplan_pad",
+      "extras": {
+        "kind": "siteplan",
+        "surface": "pad"
+      },
+      "translation": [
+        -37.05249881744385,
+        -3.5830001831054688,
+        -41.33799934387207
+      ],
+      "scale": [
+        54.496999740600586,
+        54.496999740600586,
+        54.496999740600586
+      ],
+      "mesh": 3
+    }
+  ],
+  "scenes": [
+    {
+      "name": "siteplan",
+      "nodes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "extensionsUsed": [
+    "EXT_meshopt_compression",
+    "KHR_mesh_quantization"
+  ],
+  "extensionsRequired": [
+    "EXT_meshopt_compression",
+    "KHR_mesh_quantization"
+  ]
+}

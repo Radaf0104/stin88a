@@ -77,7 +77,6 @@
     </div>
 
     <div class="toolbar">
-      <button id="mapBtn" class="chip"></button>
       <button id="walkBtn" class="chip"></button>
       <button id="galleryBtn" class="chip"></button>
       <button id="dayNight" class="chip"></button>
@@ -90,16 +89,11 @@
 
     <div id="loading"><div class="spinner"></div><div id="loadingText">Loading…</div></div>
 
-    <section id="hero">
-      <img id="heroImg" src="images/renders/r01.jpg" fetchpriority="high" alt="" />
-      <div class="hero-text">
-        <h1 id="heroTitle"></h1>
-        <p id="heroTag"></p>
-        <div class="hero-actions">
-          <button id="heroExplore" class="btn-hero primary"></button>
-          <button id="heroGallery" class="btn-hero"></button>
-        </div>
-      </div>
+    <section id="hero" role="button" tabindex="0" aria-label="STIN 88A exterior render. Click or press Enter to explore in 3D">
+      <picture>
+        <source type="image/webp" srcset="images/landing/hero-1200.webp 1200w, images/landing/hero-2000.webp 2000w" sizes="100vw" />
+        <img id="heroImg" src="images/landing/hero-2000.jpg" srcset="images/landing/hero-1200.jpg 1200w, images/landing/hero-2000.jpg 2000w" sizes="100vw" width="2000" height="1116" fetchpriority="high" decoding="async" alt="STIN 88A exterior render" draggable="false" />
+      </picture>
     </section>
 
     <div id="lightbox" class="hidden" role="dialog" aria-modal="true">

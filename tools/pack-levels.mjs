@@ -121,6 +121,16 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     n.setExtras(out);
   }
   const mg = mergeLevel(doc, LM_MAN);
+  // Door leaves turn about their node's origin (the hinge, tools/blender/04_join.py). quantize() below moves a mesh
+  // node's origin / scale to fit its quantized positions, which put the pivot in the middle of every leaf (doors
+  // spun on their centre). The leaf node keeps the hinge and its extras as a parent; the mesh moves to a child node,
+  // which quantize may adjust freely.
+  let nPivots = 0;
+  for (const n of doc.getRoot().listNodes()) {
+    if (n.getExtras().kind !== "door" || !n.getMesh() || n.listChildren().length) continue;
+    const child = doc.createNode(n.getName() + "_mesh").setMesh(n.getMesh());
+    n.setMesh(null).addChild(child); nPivots++;
+  }
   await doc.transform(prune({ keepAttributes: true }));
   console.log(`${L}: merged ${mg.before} furniture / building primitives into ${mg.after}`);
   // textures: which slot each image is used in decides the encoding

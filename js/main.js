@@ -9,10 +9,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { CONFIG } from "./config.js";
 import { materialFor, addBoxUVs, setLampGlow, allMaterials, startTextureLoading } from "./materials.js";
-import { createLandscape } from "./landscape.js";
+// (js/landscape.js - generated trees, hills, grass - replaced by the site plan; kept in the repo for reference)
 import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
 import { createWalker } from "./walk.js";
+import { createMassing } from "./massing.js";
 import { createMap } from "./map.js";
 import { createGrade, createSky } from "./grade.js";
 import { createIsolation } from "./isolate.js";
@@ -34,7 +35,7 @@ const STR = {
     hintInside: "Drag to look around", roomPhotos: "Room photos", seeAngle: "See this angle in 3D", back: "Back to 3D",
     time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", walk: "🚶 Walk", hq: "HQ", lite: "Lite",
     exitWalk: "✕ Exit walk", walkHere: "🚶 Walk around", bath: "bathroom",
-    mapOn: "🌍 Map", mapOff: "🌿 Lawn", mapNoKey: "The real-world map needs a Google Maps API key: add googleMapsKey in js/config.js.",
+    massing: "▢ Massing", mapOn: "🌍 Map", mapOff: "🌿 Site plan",mapNoKey: "The real-world map needs a Google Maps API key: add googleMapsKey in js/config.js.",
     walkHintMouse: "Click to look around · WASD / arrows to move · click a door to open it · click the stairs or lift to change floor · Esc releases the mouse",
     walkHintTouch: "Left thumb: move · Right thumb: look · tap a door to open it · tap the stairs or lift to change floor",
   },
@@ -52,7 +53,7 @@ const STR = {
     hintInside: "Geser untuk melihat sekeliling", roomPhotos: "Foto kamar", seeAngle: "Lihat sudut ini di 3D", back: "Kembali ke 3D",
     time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", walk: "🚶 Jalan", hq: "HQ", lite: "Ringan",
     exitWalk: "✕ Selesai", walkHere: "🚶 Jalan-jalan", bath: "kamar mandi",
-    mapOn: "🌍 Peta", mapOff: "🌿 Taman", mapNoKey: "Peta dunia nyata butuh API key Google Maps: isi googleMapsKey di js/config.js.",
+    massing: "▢ Massa", mapOn: "🌍 Peta", mapOff: "🌿 Rencana tapak",mapNoKey: "Peta dunia nyata butuh API key Google Maps: isi googleMapsKey di js/config.js.",
     walkHintMouse: "Klik untuk melihat · WASD / panah untuk berjalan · klik pintu untuk membuka · klik tangga atau lift untuk pindah lantai · Esc melepas mouse",
     walkHintTouch: "Jempol kiri: jalan · Jempol kanan: lihat · ketuk pintu untuk membuka · ketuk tangga atau lift untuk pindah lantai",
   },
@@ -185,16 +186,18 @@ const RENDERS = CONFIG.renders ?? [];
 const $ = (id) => document.getElementById(id);
 let ready = false;
 const hero = $("hero");
-if (RENDERS.length) $("heroImg").src = "images/renders/" + RENDERS[0].file;
-else hero.classList.add("gone");
-function leaveHero(thenGallery) {
-  hero.classList.add("gone");
-  if (ready) updateRail();
-  if (thenGallery) openGallery("exterior", 0);
-  else if (ready) introFly();
+// the landing page is one full-screen render; click/tap/Enter/Space fades it into the 3D view
+let heroLeaving = false;
+function leaveHero() {
+  if (heroLeaving || hero.classList.contains("gone")) return;
+  heroLeaving = true;
+  hero.classList.add("fading"); // CSS: opacity 1 -> 0 over 1.8 s, ease-in-out
+  if (ready) { updateRail(); introFly(); } // camera move plays under the fading image (else it starts when loading finishes)
+  setTimeout(() => hero.classList.add("gone"), 1850);
 }
-$("heroExplore").onclick = () => leaveHero(false);
-$("heroGallery").onclick = () => leaveHero(true);
+hero.addEventListener("pointerdown", leaveHero);
+hero.addEventListener("click", leaveHero);
+hero.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); leaveHero(); } });
 
 // Galleries: exterior renders (they know their camera angle) + interior photo sets from config.
 const GALLERIES = [
@@ -360,7 +363,7 @@ for (const entry of byMat.values()) {
 // level, collide, bathroom, tv, room, lm_set, door_width / door_slide / door_wide_axis.
 const doorLeaves = [], ceilingObjs = [], tvObjs = [], glbLightmapped = [];
 let lightmapManifest = {};
-const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF", "SITE"];
+const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF"]; // (the 88A file's own SITE level is replaced by the masterplan site plan, see "Ground")
 if (USE_GLB) {
   const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
     import("three/addons/loaders/GLTFLoader.js"), import("three/addons/loaders/KTX2Loader.js"), import("three/addons/libs/meshopt_decoder.module.js")]);
@@ -383,7 +386,11 @@ if (USE_GLB) {
     gltf.scene.updateMatrixWorld(true);
     gltf.scene.traverse((o) => {
       if (!o.isMesh) return;
-      const ud = o.userData.kind ? o.userData : o.parent?.userData ?? {};   // multi-material nodes: extras on the parent
+      // extras sit on the nearest node with a kind: the mesh itself, its multi-material parent, or - for hinged doors
+      // (a pivot node at the hinge holding the multi-material leaf node) - the grandparent
+      let owner = o;
+      while (owner && !owner.userData.kind && owner !== gltf.scene) owner = owner.parent;
+      const ud = owner?.userData.kind ? owner.userData : {};
       Object.assign(o.userData, { ...ud, ...o.userData });
       const name = o.material?.name;
       if (OVERRIDE[name]) o.material = materialFor(OVERRIDE[name], {});
@@ -391,7 +398,7 @@ if (USE_GLB) {
       if (o.material.transparent) o.renderOrder = 3;
       box.setFromObject(o);
       o.userData.y = [box.min.y, box.max.y];
-      if (ud.kind === "door") { const leaf = o.parent?.userData?.kind === "door" ? o.parent : o; if (!doorLeaves.includes(leaf)) doorLeaves.push(leaf); return; }
+      if (ud.kind === "door") { if (!doorLeaves.includes(owner)) doorLeaves.push(owner); return; } // owner = the hinge pivot
       levelObjects.push(o);
       if (ud.kind === "ceiling") ceilingObjs.push(o);
       if (ud.kind === "tv") tvObjs.push(o);
@@ -511,13 +518,34 @@ for (const px of USE_GLB ? [] : model.proxies ?? []) {
   root.add(im);
 }
 
-// Ground: lawn around the site
-const groundGeo = new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2).toNonIndexed();
-addBoxUVs(groundGeo);
-const ground = new THREE.Mesh(groundGeo, materialFor("Grass", { class: "grass" }));
-ground.position.y = -0.25;
-ground.receiveShadow = true;
+// Ground: the masterplan site plan (Revit "STIN MASTERPLAN FINAL": terrain, roads, pads, retaining walls), built by
+// tools/build-siteplan.mjs already in the building's own frame - so it only needs root's offset (set below). It
+// replaces the generated lawn, trees and hills; ~120 KB, flat light colours, loaded without holding up the building.
+const ground = new THREE.Group();
+const sitePlanMats = []; let sitePlanLift = -1; // (floor-view brightening of the site plan, see frame())
+const SITE_PLAN_LIGHT = { // the light plan palette used in the white floor views (Level 1)
+  grass: new THREE.Color("#c3d1a6"), soil: new THREE.Color("#ddd3c2"), road: new THREE.Color("#c4c3bf"), pad: new THREE.Color("#e8e5df"),
+};
+ground.name = "siteplan";
 scene.add(ground);
+const sitePlanReady = Promise.all([import("three/addons/loaders/GLTFLoader.js"), import("three/addons/libs/meshopt_decoder.module.js")])
+  .then(([{ GLTFLoader }, { MeshoptDecoder }]) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("data/levels/SITEPLAN.gltf"))
+  .then((g) => {
+    g.scene.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; if (!sitePlanMats.includes(o.material)) sitePlanMats.push(o.material); } });
+    ground.add(g.scene);
+    return g.scene;
+  })
+  .catch((e) => { console.warn("site plan", e); return null; });
+// Massing of the planned buildings on the masterplan pads (js/massing.js, data/massing.json): white boxes in the site
+// plan's frame, so they live in `ground` too. Shown / hidden with the "Massing" button (remembered per browser).
+let massing = null;
+const massingOn = true; // always shown (no toggle any more); the pad-1 box hides itself when it blocks the view
+try { localStorage.removeItem("stin-massing"); } catch {}
+const massingReady = createMassing({ parent: ground }).then((m) => {
+  massing = m; m.setVisible(massingOn); m.setLang(lang); renderer.shadowMap.needsUpdate = true;
+  try { invalidate(300); } catch {} // (if it arrives before the render loop is set up, the first frame draws it anyway)
+  return m;
+}).catch((e) => { console.warn("massing", e); return null; });
 const cap = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
   color: 0x5d564f, roughness: 1, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
   stencilFail: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp, stencilZPass: THREE.ReplaceStencilOp,
@@ -529,6 +557,7 @@ scene.add(cap);
 buildingBox = new THREE.Box3().setFromObject(root);
 const c = buildingBox.getCenter(new THREE.Vector3());
 root.position.set(-c.x, 0, -c.z);
+ground.position.copy(root.position); // the site plan is in the building's frame too
 buildingBox = new THREE.Box3().setFromObject(root);
 const size = buildingBox.getSize(new THREE.Vector3());
 const radius = Math.max(size.x, size.z) * 0.5;
@@ -559,12 +588,11 @@ collideGeo.translate(-c.x, 0, -c.z);
 const walker = createWalker({ camera, dom: canvas, geometry: collideGeo, onExit: () => exitWalk() });
 mark("collision");
 
-// ---------- landscape: trees, distant hills, ferns ----------
-const landscape = createLandscape({ scene, buildingBox, lite: !quality.high });
-// 3D grass around the building, kept off paving / slabs (anything solid just above the lawn)
-const grassProbe = new THREE.Vector3();
-landscape.addGrass((x, z) => { const h = walker.floorBelow(grassProbe.set(x, 0.5, z)); return !!h && h.y > ground.position.y + 0.04; }, quality.high ? 1 : 0.35);
-mark("grass");
+// ---------- landscape ----------
+// The generated trees, distant hills and 3D grass were replaced by the site plan (see "Ground" above). The calls the
+// rest of the page makes to the landscape stay, on this empty stand-in (js/landscape.js is no longer loaded).
+const landscape = { group: new THREE.Group(), setNight() {}, updateOcclusion() {}, tick() {}, addGrass() {} };
+scene.add(landscape.group);
 
 // ---------- real-world map (Google 3D Tiles) ----------
 const map = createMap({ scene, camera, renderer, site: CONFIG.site ?? {}, apiKey: CONFIG.googleMapsKey });
@@ -1065,7 +1093,7 @@ function roomPick(e) {
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   roomRay.setFromCamera(ndc, camera);
   const list = [];
-  for (const d of roomView.sp?.doors ?? []) for (const m of (d.pivot.isMesh ? [d.pivot] : d.pivot.children)) { m.userData.door = d; list.push(m); }
+  for (const d of roomView.sp?.doors ?? []) d.pivot.traverse((m) => { if (m.isMesh) { m.userData.door = d; list.push(m); } });
   if (roomView.tv) list.push(roomView.tv.hit);
   return roomRay.intersectObjects(list, false).find((h) => h.point.y < clipPlane.constant) ?? null;
 }
@@ -1134,7 +1162,7 @@ function renderUI() {
   ui.dayNight.textContent = t("time_" + (env.current ?? "day"));
   ui.dayNight.style.display = state.floor === null && !state.walking ? "" : "none"; // floor / room views have plain light
   $("walkBtn").textContent = t("walk");
-  $("mapBtn").textContent = mapWanted ? t("mapOff") : t("mapOn");
+  massing?.setLang(lang);
   $("walkExit").textContent = t("exitWalk");
   $("walkHint").textContent = matchMedia("(pointer: fine)").matches ? t("walkHintMouse") : t("walkHintTouch");
   $("insideWalk").textContent = t("walkHere");
@@ -1146,10 +1174,6 @@ function renderUI() {
   ui.langBtn.textContent = t("lang");
   $("galleryBtn").textContent = "▦ " + t("renders");
   $("galleryBtn").style.display = RENDERS.length ? "" : "none";
-  $("heroTitle").textContent = CONFIG.project.name;
-  $("heroTag").textContent = L(CONFIG.project.tagline);
-  $("heroExplore").textContent = t("explore");
-  $("heroGallery").textContent = t("renders");
   $("lbAngle").textContent = t("seeAngle");
   $("lbClose").textContent = t("back");
   if (lb.open) { renderTabs(); showRender(lb.i); }
@@ -1210,14 +1234,8 @@ ui.overviewBtn.onclick = () => selectFloor(null);
 ui.langBtn.onclick = () => { lang = lang === "en" ? "id" : "en"; try { localStorage.setItem("stin-lang", lang); } catch {} renderUI(); };
 ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); // golden hour was removed: day <-> night
 $("walkBtn").onclick = () => state.floor !== null && startWalk(stairStartAt(state.floor)); // floor view: start at the stairs
-$("mapBtn").onclick = () => {
-  if (!map.available) { toast(t("mapNoKey")); return; }
-  mapWanted = !mapWanted;
-  applyMap();
-  if (mapWanted && !state.walking && state.floor === null) // pull back to show the neighbourhood
-    flyTo(new THREE.Vector3(radius * 3.2, radius * 2.4, radius * 3.6), overviewView.target, 1.6);
-  renderUI();
-};
+// (the "Map" and "Massing" buttons were removed at the client's request, 2026-11-26: the site plan and the massing are
+// always shown; the Google 3D map code stays in js/map.js, unused while mapWanted stays false)
 $("walkExit").onclick = () => exitWalk();
 // floor menu: go to that floor's corridor (Level 1: the communal area), standing in front of the stairs
 $("walkFloors").onclick = (e) => {
@@ -1251,7 +1269,6 @@ function setTime(name) {
   mood.setFactor(tm.lamps);
   setLampGlow(0.6 + tm.glow * 1.4);
   for (const m of allMaterials()) if (m.userData.glass) { m.emissive?.setHex(0xffb066); m.emissiveIntensity = tm.glow * 0.12; }
-  ground.material.color.setHex(tm.ground);
   roomGlowMat.color.setHex(0xffc58a).multiplyScalar(tm.roomGlow ?? 0.5);
   grade.set(tm.grade);
   window.applyLightmaps?.(name); // ?model=glb: the baked light for this time of day
@@ -1379,7 +1396,7 @@ function photoContext() {
     u = roomAt(f);
     if (u?.bath && inPoly(...toPlan(f), u.bath.outline)) zone = "bath";
     if (!u) level = levelAt(f.y);
-  } else if (state.floor === null && hero.classList.contains("gone")) {
+  } else if (state.floor === null && (hero.classList.contains("gone") || heroLeaving)) {
     // building overview: the exterior renders; clicking one flies the 3D view to that angle first
     return { key: "ext", heading: L({ en: "Exterior", id: "Eksterior" }), items: galleryByKey.exterior?.items ?? [], exterior: true };
   } else return null;
@@ -1690,6 +1707,23 @@ function frame(now) {
 
   // trees in front of the building step aside (not while walking, where they're part of the scenery)
   landscape.updateOcclusion(camera, buildingBox, !state.walking && !state.inside);
+  if (massing?.updateOcclusion(camera, buildingBox)) refreshShadows(); // pad-1 box hidden / shown: its shadow too
+  // site in floor views (client, 2026-11-26: "when selecting level 1, show the ground and roads"): the Level 1 view
+  // keeps the site plan; other floor / room / walk views drop it once the outside has mostly faded. The massing boxes
+  // go in every floor view (the plan cut would slice them open).
+  const siteOn = !map.on && (isoK < 0.5 || (state.floor === 1 && !state.walking));
+  if (ground.visible !== siteOn) { ground.visible = siteOn; invalidate(100); }
+  // the floor views have plain, sunless light on white, in which the site's render colours (olive lawn, dark asphalt)
+  // read as a dark slab: blend them to the light site-plan palette, in step with the fade
+  if (siteOn && sitePlanMats.length && sitePlanLift !== isoK) {
+    sitePlanLift = isoK;
+    for (const m of sitePlanMats) {
+      m.userData.dayColor ??= m.color.clone();
+      const light = SITE_PLAN_LIGHT[m.name.replace("SITE_", "")];
+      if (light) m.color.copy(m.userData.dayColor).lerp(light, isoK);
+    }
+  }
+  if (massing && massing.group.visible !== (isoK < 0.5)) { massing.group.visible = isoK < 0.5; invalidate(100); }
   landscape.tick(now / 1000);
   roomGlow.visible = !state.walking && !state.inside && state.floor === null;
   // mood lights: around you when walking/inside; around the mouse cursor (desktop) or screen centre otherwise
@@ -1716,6 +1750,7 @@ function frame(now) {
     u.labelEl.style.left = ((v.x + 1) / 2) * innerWidth + "px";
     u.labelEl.style.top = ((1 - v.y) / 2) * innerHeight + "px";
   }
+  massing?.updateLabels(camera, state.floor === null && !lb.open && !state.walking && !state.inside);
   if (!pins.length) return;
   const showPins = state.floor === null && !lb.open && !state.walking;
   const camDir = v2.copy(camera.position).setY(0).normalize();
@@ -1739,9 +1774,14 @@ env.set("day", radius);
 // every scene material gets the isolation test (except the coloured room volumes / floor bands, which are UI)
 // (also not the hidden section-cap counter: it must see whole solids, or a slab cut by the section box reads as
 // "inside" and the cap paints over the whole floor; the visible cap plane is isolated, so caps stay in the area)
+// The site plan + massing (`ground`) are not isolated either: they're shown / hidden whole (see "site in floor views"
+// in frame(): the Level 1 view keeps the ground and roads, other floor views hide them).
 const notIsolated = new Set([...unitMeshes, ...bands, roomGlow, capMesh]);
-iso.patchScene(scene, (o) => notIsolated.has(o));
+const inGround = (o) => { for (let p = o; p; p = p.parent) if (p === ground) return true; return false; };
+iso.patchScene(scene, (o) => notIsolated.has(o) || inGround(o));
 grade.patchScene(scene); // and the colour grade, at the end of every material (and the sky)
+// the site plan may arrive after this point: give it the grade, then redraw the shadows
+sitePlanReady.then((s) => { if (!s) return; grade.patchScene(s); refreshShadows(); invalidate(300); });
 const floorViewObjects = [...unitMeshes, ...bands, cap, capMesh];
 const wasVisible = floorViewObjects.map((o) => o.visible);
 floorViewObjects.forEach((o) => (o.visible = true));
@@ -1761,7 +1801,7 @@ window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { 
   iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf };
 mark("ready"); // handy for debugging in the browser console
 ready = true;
-if (hero.classList.contains("gone") && !lb.open) introFly();
+if ((hero.classList.contains("gone") || heroLeaving) && !lb.open) introFly();
 requestAnimationFrame(frame);
 ui.loading.classList.add("done");
 // the building is on screen (with each material's average colour): now fetch the photo textures

@@ -10,35 +10,35 @@
   },
   {
    "L": "L1",
-   "gltf": 260,
-   "bin": 3219,
-   "meshes": 63,
-   "nodes": 64,
-   "tris": 189955
+   "gltf": 312,
+   "bin": 3609,
+   "meshes": 77,
+   "nodes": 96,
+   "tris": 219689
   },
   {
    "L": "L2",
-   "gltf": 297,
-   "bin": 2674,
-   "meshes": 69,
-   "nodes": 77,
-   "tris": 179175
+   "gltf": 332,
+   "bin": 3541,
+   "meshes": 77,
+   "nodes": 117,
+   "tris": 255221
   },
   {
    "L": "L3",
-   "gltf": 467,
-   "bin": 3011,
-   "meshes": 104,
-   "nodes": 119,
-   "tris": 198217
+   "gltf": 517,
+   "bin": 4449,
+   "meshes": 124,
+   "nodes": 187,
+   "tris": 332080
   },
   {
    "L": "L4",
-   "gltf": 319,
-   "bin": 2436,
-   "meshes": 73,
-   "nodes": 89,
-   "tris": 165016
+   "gltf": 390,
+   "bin": 3927,
+   "meshes": 86,
+   "nodes": 151,
+   "tris": 294690
   },
   {
    "L": "ROOF",
@@ -57,15 +57,15 @@
    "tris": 5000
   }
  ],
- "textures_kb": 4440,
+ "textures_kb": 4428,
  "lightmaps": [
   {
    "file": "lm/LM_K305_ao.ktx2",
-   "kb": 230
+   "kb": 229
   },
   {
    "file": "lm/LM_K305_day.ktx2",
-   "kb": 180
+   "kb": 177
   }
  ]
 }
