@@ -11,34 +11,34 @@
   {
    "L": "L1",
    "gltf": 312,
-   "bin": 3609,
+   "bin": 3443,
    "meshes": 77,
    "nodes": 96,
-   "tris": 219689
+   "tris": 204507
   },
   {
    "L": "L2",
    "gltf": 332,
-   "bin": 3541,
+   "bin": 3001,
    "meshes": 77,
    "nodes": 117,
-   "tris": 255221
+   "tris": 202084
   },
   {
    "L": "L3",
-   "gltf": 517,
-   "bin": 4449,
+   "gltf": 516,
+   "bin": 3464,
    "meshes": 124,
    "nodes": 187,
-   "tris": 332080
+   "tris": 233397
   },
   {
    "L": "L4",
    "gltf": 390,
-   "bin": 3927,
+   "bin": 3105,
    "meshes": 86,
    "nodes": 151,
-   "tris": 294690
+   "tris": 211189
   },
   {
    "L": "ROOF",

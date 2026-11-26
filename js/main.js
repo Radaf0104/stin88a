@@ -186,18 +186,24 @@ const RENDERS = CONFIG.renders ?? [];
 const $ = (id) => document.getElementById(id);
 let ready = false;
 const hero = $("hero");
-// the landing page is one full-screen render; click/tap/Enter/Space fades it into the 3D view
+// The landing page is the loading screen (client, 2026-11-26): one full-screen render, shown at once, no click needed.
+// When the 3D model is ready and the render has been up for at least HERO_MIN_MS, it fades slowly into the 3D view
+// (the camera's intro move plays under the fading image). See leaveHeroWhenReady() at the end of start-up.
+const HERO_MIN_MS = 1000, heroShownAt = performance.now();
 let heroLeaving = false;
 function leaveHero() {
   if (heroLeaving || hero.classList.contains("gone")) return;
   heroLeaving = true;
   hero.classList.add("fading"); // CSS: opacity 1 -> 0 over 1.8 s, ease-in-out
-  if (ready) { updateRail(); introFly(); } // camera move plays under the fading image (else it starts when loading finishes)
+  hero.setAttribute("aria-busy", "false");
+  if (ready) { updateRail(); introFly(); }
   setTimeout(() => hero.classList.add("gone"), 1850);
 }
-hero.addEventListener("pointerdown", leaveHero);
-hero.addEventListener("click", leaveHero);
-hero.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); leaveHero(); } });
+function leaveHeroWhenReady() {
+  // wait for the first frames to be drawn (so the fade reveals a finished picture), and for the minimum time
+  const wait = Math.max(0, HERO_MIN_MS - (performance.now() - heroShownAt));
+  setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(leaveHero)), wait);
+}
 
 // Galleries: exterior renders (they know their camera angle) + interior photo sets from config.
 const GALLERIES = [
@@ -1801,8 +1807,8 @@ window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { 
   iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf };
 mark("ready"); // handy for debugging in the browser console
 ready = true;
-if ((hero.classList.contains("gone") || heroLeaving) && !lb.open) introFly();
 requestAnimationFrame(frame);
+leaveHeroWhenReady(); // the loading-screen render fades into the 3D view (and the intro camera move starts)
 ui.loading.classList.add("done");
 // the building is on screen (with each material's average colour): now fetch the photo textures
 setTimeout(startTextureLoading, 50); // (not tied to a drawn frame: a tab opened in the background draws none)
