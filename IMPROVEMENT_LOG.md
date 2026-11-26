@@ -215,3 +215,26 @@ Picture: `tools/out/r11_hero.jpg`. The remaining p5 / p50 gap is the histogram's
 - **Deferring furniture to after the first view:** only ~25 % of the level geometry is furniture without walk-mode collision (the rest has to be there for walking), so the phone gain is modest for an invasive loader change.
 - **Lighter furniture:** simplifying it would change its shape, which the rules don't allow. The heavy shared pieces are already GPU-instanced (round 2/3).
 - **CC0 texture downloads** (Poly Haven fabrics) need the user's OK first. They're optional, since our procedural textures cost 0 bytes.
+
+## Round 13: what a phone really downloads; a half-size texture set for phones
+**Measuring the real transfer.** GitHub Pages gzips the geometry .bin files (checked on the live site: L1.bin is 3.5 MB on disk and 1.6 MB transferred, `Content-Encoding: gzip`), while KTX2 doesn't compress any further. Every file the page loads at start, gzipped like GitHub Pages:
+
+| | on disk | over the wire |
+|---|---|---|
+| level geometry .bin | 13.0 MB | 6.03 MB |
+| level glTF JSON | 2.3 MB | 0.16 MB |
+| KTX2 textures | 4.28 MB | **4.28 MB** (~40 % of the transfer) |
+| everything at start | 18.6 MB | **10.9 MB** |
+
+(The local server doesn't gzip, so the "download" numbers in rounds 1–12 overstate a real visitor's transfer; the relative gains still hold.)
+
+- **tools/pack-levels.mjs:** every texture is also encoded at half size into `data/levels/tex_m/` (full-size colour 1024 → 512; normal, roughness and small items 512 → 256).
+- **js/main.js:** on a phone (the round 6 profile) the shared KTX2 loader swaps `tex/` for `tex_m/`. Desktop is unchanged.
+
+| | desktop | phone (375×812 emulated) |
+|---|---|---|
+| textures downloaded | 49 files, 4276 KB | 49 files, **1150 KB** |
+| total over the wire (est.) | 10.9 MB | **≈ 7.8 MB** (−29 %) |
+| textured meshes loaded | 312 | 312 |
+
+No console errors on either profile. CPU and network throttling still can't be emulated in this browser, so phone load and FPS aren't measured directly.

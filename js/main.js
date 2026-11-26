@@ -384,6 +384,7 @@ if (USE_GLB) {
   // promise per file: every texture is fetched and transcoded once and shared by all levels (round 7).
   const ktxShared = new Map(), ktxLoad = ktx2.load.bind(ktx2);
   ktx2.load = (url, onLoad, onProgress, onError) => {
+    if (phone) url = url.replace("/levels/tex/", "/levels/tex_m/"); // phones: the half-size set (round 13)
     if (!ktxShared.has(url)) ktxShared.set(url, new Promise((res, rej) => ktxLoad(url, res, onProgress, rej)));
     ktxShared.get(url).then(onLoad, onError);
   };

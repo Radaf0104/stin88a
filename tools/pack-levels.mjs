@@ -20,19 +20,20 @@ const RAW = join(root, "source/glb_raw"), OUT = join(root, "data/levels"), LMPNG
 const TOKTX = existsSync(join(process.env.LOCALAPPDATA ?? "", "Programs/KTX-Software/bin/toktx.exe"))
   ? join(process.env.LOCALAPPDATA, "Programs/KTX-Software/bin/toktx.exe") : "toktx";
 const UASTC_LM = process.argv.includes("--uastc-lightmaps");
-mkdirSync(join(OUT, "tex"), { recursive: true }); mkdirSync(join(OUT, "lm"), { recursive: true });
+mkdirSync(join(OUT, "tex"), { recursive: true }); mkdirSync(join(OUT, "tex_m"), { recursive: true }); mkdirSync(join(OUT, "lm"), { recursive: true });
 
 // colour maps that stay at full size: big surfaces seen up close over whole walls / floors / facades. Everything else
 // (bedding, curtains, rug, chair, plant, metal...) only ever covers a small part of the screen: 512 px is plenty.
 const FULL_SIZE = /plaster|wood|teak|tile|concrete|paving|marble|stone/;
-function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = false } = {}) {
+function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = false, mobile = false } = {}) {
   if (!process.argv.includes("--force") && existsSync(dst) && statSync(dst).mtimeMs > statSync(src).mtimeMs) return;   // already built from this source
   const args = ["--t2", "--genmipmap", "--assign_oetf", srgb ? "srgb" : "linear"];
   if (normal || uastc) args.push("--encode", "uastc", "--uastc_quality", "2", "--zcmp", "18");
   else args.push("--encode", "etc1s", "--clevel", "4", "--qlevel", "160");
   // normal maps: 512 px + rate-distortion optimisation (surface relief at room scale does not need 1k; it was ~10 MB)
   // (no --normal_mode: that stores X/Y in red/alpha, which three.js does not read as a normal map)
-  if (normal) args.push("--resize", "512x512", "--uastc_rdo_l", "3");   // (round 9: RDO 1.5 -> 3, normal maps ~14 % smaller)
+  if (mobile) args.push("--resize", normal || half ? "256x256" : "512x512", ...(normal ? ["--uastc_rdo_l", "3"] : []));   // phone set (round 13): half size
+  else if (normal) args.push("--resize", "512x512", "--uastc_rdo_l", "3");   // (round 9: RDO 1.5 -> 3, normal maps ~14 % smaller)
   else if (half) args.push("--resize", "512x512");   // roughness maps and small-item colour maps
   // (retried: on Windows the output file is sometimes still locked for a moment - "could not open output file")
   for (let attempt = 1; ; attempt++) {
@@ -244,8 +245,13 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     const src = join(tmpdir(), "stinpack_" + key + extname(uri)); writeFileSync(src, tex.getImage());
     const dst = join(OUT, "tex", key + ".ktx2");
     const isColour = slot === "baseColorTexture" || slot === "emissiveTexture";
-    toktx(src, dst, { normal: slot === "normalTexture", srgb: isColour,
-      half: slot === "metallicRoughnessTexture" || slot === "occlusionTexture" || (isColour && !FULL_SIZE.test(key.toLowerCase())) });
+    const opts = { normal: slot === "normalTexture", srgb: isColour,
+      half: slot === "metallicRoughnessTexture" || slot === "occlusionTexture" || (isColour && !FULL_SIZE.test(key.toLowerCase())) };
+    toktx(src, dst, opts);
+    // (round 13 of IMPROVEMENT_LOG.md) a half-size set for phones, same names in data/levels/tex_m/ - the site swaps the
+    // folder when it runs on a phone (js/main.js); KTX2 doesn't compress any further on the wire, so this is ~40 % of a
+    // phone's download
+    toktx(src, join(OUT, "tex_m", key + ".ktx2"), { ...opts, mobile: true });
     tex.setImage(readFileSync(dst)).setMimeType("image/ktx2").setURI("tex/" + key + ".ktx2");
   }
   doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
