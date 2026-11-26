@@ -67,3 +67,15 @@ Checked: K.404 and K.408 (a mirrored copy) look the same as before, with fitting
 | sky HDR | 1.06 MB | 0.28 MB |
 
 **Research in** (research/website-improvement.md, research/v5-perf-color-ideas.md): the live site is ready only after ~22 s because the jsDelivr ES modules load one after another (KTX2Loader starts at 9.4 s, L1.gltf at ~16 s). That is the next round. Colour: blacks are lifted, highlights too bright and there is a slight green tint against the hero render (exposure 1.8 on Neutral).
+
+## Round 4: no more load waterfall
+The research measured the live site: building ready only after ~22 s, because the ES modules from jsDelivr are discovered one import level at a time (main → passes/controls → KTX2Loader/meshopt only after model.json → WorkerPool/ktx-parse → basis transcoder): 4–5 round trips in a row before the first level file is even requested.
+- **index.html:** modulepreload for the whole module tree (10 local modules + 22 three.js addons, including KTX2Loader, meshopt and their own imports) and preload (as fetch, crossorigin, the same mode the loaders use, so nothing is fetched twice) for the basis transcoder js + wasm, every level .gltf + .bin, the site plan and the 512 px sky. The unused js/landscape.js preload was removed.
+
+| metric (local server, cached; a phone network will gain far more) | before | after |
+|---|---|---|
+| KTX2Loader requested at | 205 ms | **24 ms** |
+| basis transcoder requested at | 303 ms | **25 ms** |
+| L1.gltf requested at | 237 ms | **25 ms** |
+| ready (all floors, shaders compiled) | 1415 ms | **1229 ms** |
+| duplicate downloads | – | none |

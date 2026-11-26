@@ -34,7 +34,56 @@
   <link rel="modulepreload" href="js/main.js" />
   <link rel="modulepreload" href="js/materials.js" />
   <link rel="modulepreload" href="js/environment.js" />
-  <link rel="modulepreload" href="js/landscape.js" />
+  <!-- (round 4 of IMPROVEMENT_LOG.md) the rest of the module tree and the level data: without these the browser only
+       finds them one import level at a time (4-5 round trips in a row on a phone) -->
+  <link rel="modulepreload" href="js/config.js" />
+  <link rel="modulepreload" href="js/lighting.js" />
+  <link rel="modulepreload" href="js/walk.js" />
+  <link rel="modulepreload" href="js/massing.js" />
+  <link rel="modulepreload" href="js/roomstyle.js" />
+  <link rel="modulepreload" href="js/proctex.js" />
+  <link rel="modulepreload" href="js/map.js" />
+  <link rel="modulepreload" href="js/grade.js" />
+  <link rel="modulepreload" href="js/isolate.js" />
+  <link rel="modulepreload" href="js/spaces.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/Pass.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/CopyShader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/OutputPass.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/MaskPass.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/GTAOShader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/PoissonDenoiseShader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/math/SimplexNoise.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/LuminosityHighPassShader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/objects/Sky.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/OutputShader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lights/RectAreaLightUniformsLib.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/lights/RectAreaLightTexturesLib.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/KTX2Loader.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/meshopt_decoder.module.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/WorkerPool.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/zstddec.module.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/ktx-parse.module.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/math/ColorSpaces.js" />
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/basis/basis_transcoder.js" as="fetch" crossorigin />
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/basis/basis_transcoder.wasm" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L0.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L0.bin" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L1.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L1.bin" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L2.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L2.bin" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L3.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L3.bin" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L4.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/L4.bin" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/ROOF.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/ROOF.bin" as="fetch" crossorigin />
+  <link rel="preload" href="data/levels/SITEPLAN.gltf" as="fetch" crossorigin />
+  <link rel="preload" href="assets/sky/autumn_field_puresky_512.hdr" as="fetch" crossorigin />
 </head>
 <body>
   <div id="app">
