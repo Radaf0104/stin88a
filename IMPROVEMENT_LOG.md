@@ -269,3 +269,15 @@ Checked: K.404 (packed UVs) has stone, walnut and tiles mapped as before (`tools
 
 **Tried and reverted:** decoding meshopt in web workers (`MeshoptDecoder.useWorkers`). The building was ready later (629 / 675 ms vs 514 ms), because worker start-up costs more than decoding these mid-size buffers on the main thread.
 Start-up timeline now (local, desktop): building 514 ms → collision 653 ms → shaders compiled (compileAsync) 1011 ms → ready 1025 ms.
+
+## Round 16: a static stand-in for the exterior doors in the overview
+The overview draws the exterior doors (balcony glass, fixed leaves) closed and never moves them, but each leaf is its own hinged mesh with 2–4 materials, so they took ~90 of the remaining draw calls.
+- **js/main.js:** at start-up all exterior door leaves (not interior, not corridor entrances) are joined per material into a static stand-in in world space, at their closed position. Every vertex stays where it is, and mirrored leaves get their winding flipped back. The overview draws the stand-in (7 meshes) and hides the hinged leaves. Floor, room and walk views do the opposite, so the doors still open there (checked: Level 3 view shows 28 real leaves and 0 stand-ins).
+
+| | before | after |
+|---|---|---|
+| draw calls (overview, bench camera) | 469 | **369** (−21 %) |
+| GPU frame (1280×720) | 4.4 ms | 3.5 ms |
+| hero-camera colour (p5/p50/p95, RGB) | 69/145/233, 134/139/131 | identical |
+
+**Since the baseline:** overview draw calls 790 → 369 (−53 %).

@@ -659,6 +659,9 @@ function showBand(lo = -Infinity, hi = Infinity) {
   const outside = state.floor === null && !state.walking;
   // (round 2 of the improvement log: the corridor entrance doors too - they face the enclosed corridors)
   if (outside) try { for (const d of spaces.doors) if (d.interior || d.role === "entrance") d.pivot.visible = false; } catch {} // (spaces not built yet)
+  // the exterior doors: their static stand-in in the overview (round 16), the real hinged leaves everywhere else
+  try { const proxy = outside && band[0] === -Infinity && overviewDoorProxies.length > 0;
+    for (const m of overviewDoorProxies) m.visible = proxy; if (proxy) for (const d of overviewDoorLeaves) d.pivot.visible = false; } catch {}
   // nor the bathrooms: their fittings (instanced) and the Revit plumbing at the end of each building mesh; nor the TVs
   // (on the inner walls, ~2 draw calls each)
   for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv" || (o.userData.style_room && SMALL_DRESSING.has(o.userData.kind)))) o.visible = false;
@@ -741,6 +744,36 @@ const probeRay = new THREE.Ray();
 const spaces = createSpaces({ model, units, levelY, root, buildingBox, doorChunks, doorLeaves: USE_GLB ? doorLeaves : null,
   probe: (o, dir, min, max) => { const h = walker.raycastAll(probeRay.set(o, dir)).find((x) => x.distance > min); return h && h.distance < max ? h.distance : null; } });
 for (const d of spaces.doors) { d.pivot.userData.y = [d.box.min.y, d.box.max.y]; levelObjects.push(d.pivot); } // drawn per floor like the rest
+
+// (round 16) The overview draws the exterior doors (balcony glass, fixed leaves) closed and never moves them, yet each
+// leaf is its own hinged mesh with 2-4 materials: ~90 draw calls. A static stand-in - all those leaves joined per
+// material, in world space, at their closed position (every vertex where it is; mirrored ones get their winding flipped
+// back) - is drawn in the overview instead; floor, room and walk views keep the real hinged leaves.
+const overviewDoorLeaves = spaces.doors.filter((d) => !d.interior && d.role !== "entrance");
+const overviewDoorProxies = [];
+{
+  const groups = new Map();
+  for (const d of overviewDoorLeaves) d.pivot.traverse((o) => { if (o.isMesh && !Array.isArray(o.material)) { if (!groups.has(o.material)) groups.set(o.material, []); groups.get(o.material).push(o); } });
+  const f32 = (a) => { const f = new Float32Array(a.count * a.itemSize); for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) f[i * a.itemSize + c] = a.getComponent(i, c); return new THREE.BufferAttribute(f, a.itemSize); };
+  for (const [mat, list] of groups) {
+    const geos = [];
+    for (const o of list) {
+      o.updateWorldMatrix(true, false);
+      const g = new THREE.BufferGeometry();
+      for (const name of ["position", "normal", "uv"]) if (o.geometry.attributes[name]) g.setAttribute(name, f32(o.geometry.attributes[name]));
+      g.setIndex(o.geometry.index ? Array.from(o.geometry.index.array) : [...Array(g.attributes.position.count).keys()]);
+      g.applyMatrix4(o.matrixWorld);
+      if (o.matrixWorld.determinant() < 0) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } }
+      geos.push(g);
+    }
+    const names = new Set(geos.map((g) => Object.keys(g.attributes).sort().join()));
+    const merged = names.size === 1 ? mergeGeometries(geos, false) : null;
+    geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, mat); m.castShadow = !mat.transparent; m.receiveShadow = true; if (mat.transparent) m.renderOrder = 3;
+    m.visible = false; m.userData.overviewDoors = true; scene.add(m); overviewDoorProxies.push(m);
+  }
+}
 timings.doors = `${spaces.doors.length} doors (${spaces.doors.filter((d) => d.role === "entrance").length} entrance, ${spaces.doors.filter((d) => d.role === "inside").length} inside)`;
 
 // Mood-light anchors: bedroom lamps, bathroom lights, corridor bays, shared spaces
