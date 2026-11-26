@@ -137,3 +137,30 @@ Every level file brought its own copy of the same Blender material (same texture
 | hero-camera colour p5/p50/p95, RGB | 83/158/238, 143/151/136 | identical (the look is unchanged) |
 
 GPU frame time this round: 5.4 ms at 1280×720. The browser pane was visible for once; earlier rounds' 12 ms were measured in a hidden, throttled tab and aren't comparable.
+
+## Round 9: lighter normal maps
+- **tools/pack-levels.mjs:** the UASTC normal maps (already 512 px) are encoded with RDO 3 instead of 1.5. A test on M_plaster_cream_nor gave 180 → 155 KB at RDO 3 and 141 KB at 4.5; 3 was chosen, since it barely affects fine relief.
+
+| metric | round 8 | round 9 |
+|---|---|---|
+| normal maps (12 files) | 1686 KB | **1534 KB** |
+| KTX2 total | 4.32 MB | 4.18 MB |
+| download (measured in the browser) | 19.04 MB | **18.89 MB**, 0 duplicates |
+| meshes with normal maps | 299 | 299 (all still load) |
+
+## Status after 9 rounds (vs baseline)
+| | baseline (b08f6dc) | now |
+|---|---|---|
+| download | 22.15 MB | **18.89 MB** (−15 %) |
+| draw calls (overview) | 790 | **515** (−35 %) |
+| scene triangles | 949 k | 935 k |
+| materials | 332 | 201 |
+| first level request (local) | after a 4–5-step module waterfall | at ~25 ms, everything in parallel |
+| colour vs hero render (RGB) | 156/166/151 (milky, green) | 143/151/136 |
+| phones | desktop settings | own profile (2048 shadow map, 3 lights, 1.25× pixels) |
+
+**Ideas for the next rounds:**
+- Load the first floor's shell first and the other floors' furniture when idle (phones).
+- Cheap contact shadows under furniture.
+- Interior colour match against the room renders.
+- CC0 fabric textures (Poly Haven linen / bouclé) for the style rooms.

@@ -32,7 +32,7 @@ function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = fa
   else args.push("--encode", "etc1s", "--clevel", "4", "--qlevel", "160");
   // normal maps: 512 px + rate-distortion optimisation (surface relief at room scale does not need 1k; it was ~10 MB)
   // (no --normal_mode: that stores X/Y in red/alpha, which three.js does not read as a normal map)
-  if (normal) args.push("--resize", "512x512", "--uastc_rdo_l", "1.5");
+  if (normal) args.push("--resize", "512x512", "--uastc_rdo_l", "3");   // (round 9: RDO 1.5 -> 3, normal maps ~14 % smaller)
   else if (half) args.push("--resize", "512x512");   // roughness maps and small-item colour maps
   // (retried: on Windows the output file is sometimes still locked for a moment - "could not open output file")
   for (let attempt = 1; ; attempt++) {
