@@ -6,7 +6,7 @@
 // and sRGB conversion, as before), so the picture keeps its look without a second pass over the screen.
 import * as THREE from "three";
 
-export const GRADE_DEFAULT = { gain: 1, contrast: 1, saturation: 1, lift: 0, warm: [1, 1, 1], cool: [1, 1, 1], vignette: 0 };
+export const GRADE_DEFAULT = { gain: 1, contrast: 1, saturation: 1, lift: 0, warm: [1, 1, 1], cool: [1, 1, 1], vignette: 0, gamma: 1 };
 
 const GLSL = /* glsl */ `
   if (uGradeOn > 0.5) {
@@ -14,6 +14,7 @@ const GLSL = /* glsl */ `
     float gL = dot(gc, vec3(0.2126, 0.7152, 0.0722));
     gc *= mix(uGradeCool, uGradeWarm, smoothstep(0.15, 0.85, gL));          // split toning
     gc = clamp((gc - 0.5) * uGradeContrast + 0.5, 0.0, 1.0);                 // contrast
+    gc = pow(gc, vec3(uGradeGamma));                                         // midtone gamma (0 and 1 stay put)
     gc = gc + uGradeLift * (1.0 - gc) * (1.0 - smoothstep(0.0, 0.5, gc));    // shadow lift
     float gL2 = dot(gc, vec3(0.2126, 0.7152, 0.0722));
     gc = mix(vec3(gL2), gc, uGradeSaturation);                               // saturation
@@ -50,7 +51,7 @@ export function createGrade() {
     uBloomK: { value: 0.22 * 5 * 0.6 }, uBloomLo: { value: 0.9 }, uBloomHi: { value: 0.91 }, uBloomAmb: { value: 0.12 },
     uGradeOn: { value: 1 }, uGradeContrast: { value: 1 }, uGradeSaturation: { value: 1 }, uGradeLift: { value: 0 },
     uGradeWarm: { value: new THREE.Vector3(1, 1, 1) }, uGradeCool: { value: new THREE.Vector3(1, 1, 1) },
-    uGradeVignette: { value: 0 }, uGradeGain: { value: 1 }, uGradeRes: { value: new THREE.Vector2(1, 1) },
+    uGradeVignette: { value: 0 }, uGradeGain: { value: 1 }, uGradeGamma: { value: 1 }, uGradeRes: { value: new THREE.Vector2(1, 1) },
   };
   let bloomOn = true;
   // k / lo / hi: bloom's own strength and threshold; amb: the even glow its widest blur spread over the whole picture
@@ -68,7 +69,7 @@ export function createGrade() {
       prev?.call(m, sh, r);
       Object.assign(sh.uniforms, U);
       let f = sh.fragmentShader;
-      const decl = "uniform float uBloomK, uBloomLo, uBloomHi, uBloomAmb, uGradeOn, uGradeContrast, uGradeSaturation, uGradeLift, uGradeVignette, uGradeGain; uniform vec3 uGradeWarm, uGradeCool; uniform vec2 uGradeRes;\n";
+      const decl = "uniform float uBloomK, uBloomLo, uBloomHi, uBloomAmb, uGradeOn, uGradeContrast, uGradeSaturation, uGradeLift, uGradeVignette, uGradeGain, uGradeGamma; uniform vec3 uGradeWarm, uGradeCool; uniform vec2 uGradeRes;\n";
       f = f.includes("#include <common>") ? f.replace("#include <common>", "#include <common>\n" + decl) : decl + f;
       if (f.includes("#include <tonemapping_fragment>")) {
         f = f.replace("#include <fog_fragment>", ""); // (moved before the tone curve, see PRE_TONEMAP)
@@ -88,7 +89,7 @@ export function createGrade() {
     set(g = GRADE_DEFAULT) {
       const v = { ...GRADE_DEFAULT, ...g };
       U.uGradeGain.value = v.gain; U.uGradeContrast.value = v.contrast; U.uGradeSaturation.value = v.saturation;
-      U.uGradeLift.value = v.lift; U.uGradeVignette.value = v.vignette; U.uGradeWarm.value.set(...v.warm); U.uGradeCool.value.set(...v.cool);
+      U.uGradeLift.value = v.lift; U.uGradeVignette.value = v.vignette; U.uGradeGamma.value = v.gamma; U.uGradeWarm.value.set(...v.warm); U.uGradeCool.value.set(...v.cool);
     },
     setResolution(w, h) { U.uGradeRes.value.set(w, h); },
     set enabled(on) { U.uGradeOn.value = on ? 1 : 0; },

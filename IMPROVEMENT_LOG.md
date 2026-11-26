@@ -180,3 +180,25 @@ Every variant was measured from the hero camera (luminance p5 / p50 / p95 | mean
 - C4 is the closest so far: highlights match (234 vs 232), green is gone (R and G within 4, B 8–12 below, as in the render), and midtones are 13 brighter.
 - The remaining p5 gap is scene content (the render's tree shadows).
 - Picture: `tools/out/cp_C4.jpg`. Applied in js/environment.js `TIMES.day`.
+
+## Round 11: midtone gamma (research colour v2) and the lawn hue
+- **js/grade.js:** a new `gamma` control in the in-material grade: `pow(c, gamma)` on the display colour after contrast, which leaves 0 and 1 in place. It defaults to 1, so other times of day are unaffected. Day uses **1.08**.
+- Gamma trials (hero camera; plaster and lawn swatches):
+
+| gamma | p5 / p50 / p95 | mean RGB | plaster | lawn |
+|---|---|---|---|---|
+| 1.00 | 71 / 149 / 234 | 138 / 142 / 130 | #d8cfbc | #66621a |
+| 1.08 | 69 / 145 / 233 | 133 / 138 / 127 | #d8ceba | #5f5b16 |
+| 1.12 | 66 / 143 / 233 | 131 / 136 / 126 | #d8ceb9 | #5c5814 |
+| 1.17 | 63 / 141 / 233 | 129 / 134 / 125 | #d8cdb8 | #585412 |
+
+  Gamma doesn't move the plaster but darkens the lawn further from the render's #727539, so the mild 1.08 was chosen.
+- **Lawn base colour (tools/build-siteplan.mjs):** [0.27, 0.30, 0.13] → **[0.275, 0.31, 0.165]**: a little more blue, with green kept just above red after the warm grade. Tried first: [0.29, 0.30, 0.17] read brown (#675b23) and [0.26, 0.32, 0.16] read green again (mean G 8 above R).
+
+| | p5 / p50 / p95 | mean RGB | lawn |
+|---|---|---|---|
+| hero render | 33 / 136 / 232 | 142 / 142 / 133 | #727539 |
+| round 10 | 71 / 149 / 234 | 138 / 142 / 130 | #66621a |
+| **round 11** | **69 / 145 / 233** | **134 / 139 / 131** | #615e21 |
+
+Picture: `tools/out/r11_hero.jpg`. The remaining p5 / p50 gap is the histogram's shape (the render has ~22 % bright sky and deep tree shade), not the tone settings.

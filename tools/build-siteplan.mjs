@@ -23,7 +23,7 @@ const LOOK = {
   // warm, soft palette after the client's reference render (white render, honey timber, charcoal, hazy morning lawn)
   // Matched by measurement to the client's render (images/3.jpg): olive lawn #727539, dark grey asphalt, pale concrete.
   // The day sun + exposure + haze lift colours ~2-3x on screen, so these base colours are much darker than they read.
-  grass: { color: [0.27, 0.30, 0.13], rough: 1.0 },   // olive lawn -> ~#757A3E on screen
+  grass: { color: [0.275, 0.31, 0.165], rough: 1.0 }, // olive lawn (round 11: a touch more blue, green kept above red after the warm grade; render #727539)
   soil:  { color: [0.42, 0.37, 0.29], rough: 1.0 },   // warm earth
   road:  { color: [0.22, 0.225, 0.24], rough: 0.95 }, // dark asphalt -> ~#686B70 in sun
   pad:   { color: [0.58, 0.575, 0.56], rough: 0.9 },  // pale concrete pads, retaining walls

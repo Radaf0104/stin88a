@@ -27,7 +27,7 @@ export const TIMES = {
             // indoors: neutral studio-room light + cool daylight through the window, lamps dimmed (they're "on" but daylight wins)
             roomEnv: 0.3, window: [0xeef3ff, 4],
             // colours matched by measurement to the client's elevation render: cream plaster, light honey timber, olive lawn
-            grade: { gain: 0.955, contrast: 1.16, saturation: 1.04, lift: 0, warm: [1.05, 0.965, 0.955], cool: [1.0, 0.955, 1.0], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0015 /* the masterplan site reaches ~150 m: light haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
+            grade: { gain: 0.955, contrast: 1.16, saturation: 1.04, lift: 0, gamma: 1.08, warm: [1.05, 0.965, 0.955], cool: [1.0, 0.955, 1.0], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0015 /* the masterplan site reaches ~150 m: light haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
   golden: { hdri: "assets/sky/kloppenheim_06_puresky_1k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
             fill: [0xfff4e6, 0x9a8a72, 0.09], roomEnv: 0.22, window: [0xffcf9a, 2.5], skyDesat: 0.2, skyHaze: 0.5, roomGlow: 0.9, lamps: 0.9, glow: 0.4,
             grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },
