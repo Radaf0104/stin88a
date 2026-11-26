@@ -123,3 +123,17 @@ Checked: both profiles load without console errors. There is no real phone GPU h
 | ready (local) | 1229 ms | 1215 ms |
 
 \*Round 4 really downloaded 22.4 MB because of the duplicate textures. The 19.04 MB in rounds 4–6 was measured before the parallel requests started colliding.
+
+## Round 8: one material per name across the levels
+Every level file brought its own copy of the same Blender material (same textures, shared since round 7), so the scene had 313 materials.
+- **js/main.js loader:** the first material of each name is reused by every level, except the materials replaced by the site's own shaders (glass, water) and the style rooms' own materials (js/roomstyle.js).
+
+| metric | round 7 | round 8 |
+|---|---|---|
+| materials in the scene | 313 | **201** |
+| shader programs | 31 | 31 |
+| draw calls | 515 | 515 |
+| ready (local) | 1215 ms | **1052 ms** |
+| hero-camera colour p5/p50/p95, RGB | 83/158/238, 143/151/136 | identical (the look is unchanged) |
+
+GPU frame time this round: 5.4 ms at 1280×720. The browser pane was visible for once; earlier rounds' 12 ms were measured in a hidden, throttled tab and aren't comparable.

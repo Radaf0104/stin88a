@@ -398,7 +398,7 @@ if (USE_GLB) {
   // site shaders by material name (glass with Fresnel, frosted glass, water)
   const OVERRIDE = { M_glass_clear: "Glazing-Clear", M_glass_frosted: "GLAZINGfrosty", M_water: "Water" };
   const gltfs = await Promise.all(GLB_LEVELS.map((L) => loader.loadAsync(`data/levels/${L}.gltf`).catch((e) => { console.warn("level", L, e); return null; })));
-  const box = new THREE.Box3(), m4 = new THREE.Matrix4(), v3 = new THREE.Vector3();
+  const box = new THREE.Box3(), m4 = new THREE.Matrix4(), v3 = new THREE.Vector3(), sharedMats = new Map();
   for (const gltf of gltfs) {
     if (!gltf) continue;
     root.add(gltf.scene);
@@ -413,6 +413,12 @@ if (USE_GLB) {
       Object.assign(o.userData, { ...ud, ...o.userData });
       const name = o.material?.name;
       if (OVERRIDE[name]) o.material = materialFor(OVERRIDE[name], {});
+      // one material per name across all levels (round 8): every level file brings its own copy of the same Blender
+      // material (same textures, now shared - round 7), which multiplied materials and GPU state changes per frame
+      else if (name && !Array.isArray(o.material)) {
+        const first = sharedMats.get(name);
+        if (first) o.material = first; else sharedMats.set(name, o.material);
+      }
       o.castShadow = !o.material.transparent; o.receiveShadow = true;
       if (o.material.transparent) o.renderOrder = 3;
       // GPU-instanced furniture (tools/pack-levels.mjs instanceHeavy): its bounds cover every instance
