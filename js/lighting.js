@@ -2,7 +2,6 @@
 // temperature and strength. A fixed pool of point lights is moved each frame to the anchors nearest the viewer,
 // so the whole building can be lit while the GPU only ever handles a few lights.
 import * as THREE from "three";
-import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 
 export const MOODS = {
   bedroom:  { color: 0xffd6ad, power: 9,  height: 2.25 }, // ~3000 K warm white (deeper orange made the walls brown)
@@ -40,21 +39,25 @@ export function createMoodLights(scene, count) {
   return { add, update, anchors, setFactor: (f) => { factor = f; dirty = true; }, clear: () => { anchors.length = 0; dirty = true; } };
 }
 
-// Daylight through the window of the room you're in: one soft rectangular area light filling the window / balcony
-// opening and shining into the room (like the sky seen through the glass). Strength and colour per time of day
-// (`window` in TIMES). win = { pos, inward (unit vector), width, height } in world space, or null outside rooms.
+// Daylight through the window of the room you're in: one wide, fully soft spot light standing just outside the
+// window / balcony opening and shining into the room (like the sky seen through the glass). Strength and colour per
+// time of day (`window` in TIMES, in the old area-light units). win = { pos, inward (unit vector), width, height }.
+// (round 20: was a RectAreaLight - its LTC library was a 75 KB download and added area-light code to every shader.)
+export const WINDOW_CD = 3.2; // candela per old area-light unit per m2 of opening (first estimate, not yet matched by render)
 export function createWindowLight(scene) {
-  RectAreaLightUniformsLib.init();
-  const light = new THREE.RectAreaLight(0xffffff, 0, 2, 2);
-  scene.add(light);
-  let win = null, setting = [0xffffff, 0];
+  const light = new THREE.SpotLight(0xffffff, 0, 0, 1.25, 1, 2); // ~72 deg half-angle, soft edge, physical falloff
+  light.castShadow = false;
+  // Added to the scene only the first time a window is set: the eye-level room view that used it (enterRoom) is not
+  // reachable at the moment, and an unused light still costs every lit pixel and every shader.
+  let win = null, setting = [0xffffff, 0], added = false;
   const apply = () => {
-    light.intensity = win ? setting[1] : 0;
     light.color.setHex(setting[0]);
-    if (!win) return;
-    light.width = win.width; light.height = win.height;
-    light.position.copy(win.pos);
-    light.lookAt(win.pos.clone().add(win.inward));
+    if (!win) { light.intensity = 0; return; }
+    if (!added) { scene.add(light, light.target); added = true; }
+    light.intensity = setting[1] * WINDOW_CD * win.width * win.height;
+    light.position.copy(win.pos).addScaledVector(win.inward, -1.0).setY(win.pos.y + 0.3); // 1 m outside, a bit high
+    light.target.position.copy(win.pos).addScaledVector(win.inward, 3).setY(win.pos.y - 0.6);
+    light.target.updateMatrixWorld();
   };
   return {
     light,

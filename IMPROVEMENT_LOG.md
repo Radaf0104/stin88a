@@ -311,3 +311,14 @@ Found by rendering the walk start on every floor, desktop 1600x893 and phone 375
 - Measured: hero 65/145/232, RGB 130/136/130 (unchanged). GPU textures 68, no new geometry, all modules parse.
 - Renders: tools/out/r19_lobby_before.jpg / r19_L2_desk.jpg, r19_phone_before.jpg / r19_phone_after.jpg, r19_L1_desk.jpg, r19_L3_desk.jpg.
 - Not measured: first-frame time on a real phone (the browser pane was hidden, so timings there aren't meaningful).
+
+## Round 20 — lights, shadows, JavaScript weight (research audit items 1, 2 and the bonus)
+Checked each audit claim before acting:
+- **Window light was never on**: `enterRoom()` (the eye-level room view that aimed it) is never called, so the RectAreaLight sat at intensity 0, adding per-pixel cost and area-light code to every shader. It is now a soft SpotLight, added to the scene only if a window is ever set; today, none is. The RectAreaLight libraries are gone (107 KB gz / 314 KB raw). `WINDOW_CD` is a first estimate, not yet matched by render.
+- **Dead post-processing chain**: `buildComposer()` (GTAO, bloom, output pass, grade pass) is never called, yet its modules were imported and preloaded. Removed the code, imports and preloads (EffectComposer, Pass, CopyShader, GTAOPass/Shader, PoissonDenoise, SimplexNoise, UnrealBloom, LuminosityHighPass, OutputPass/Shader, ShaderPass, MaskPass: about 22 KB gz).
+- **three.module.min.js**: 266.6 → 172.2 KB gz (1.31 → 0.69 MB raw).
+- In total, about **224 KB less gzipped JS and about 1 MB less to parse**: 15 JS files, 256 KB encoded.
+- **Sun shadow** 4096 → 2048 on desktop, 2048 → 1024 on phone. The shadow box is 68 m, so texels are 3.3 / 6.6 cm. A/B at the hero camera shows no visible change (tools/out/r20_shadow_compare.jpg). Saves 48 MB of GPU memory on desktop.
+- **Mood lights kept (6 desktop / 3 phone)**: a GPU-synced bench in the K.405 walk view gave 5.1–5.4 ms with all lights and 6.1 ms with the minimum. That's noise, so no measurable cost on this GPU.
+- **Not done**: shadow casters are 385, not 800, and only 28 are under 0.4 m, so that would be a small gain. Audit items 3–5 are next.
+- Measured: hero 65/145/232, RGB 130/136/130 (unchanged); 368 calls, 735k triangles, 30 programs (was 43 in the same session), 63 textures. Warm shader compile ~0.3 s (a cold cache after a shader-source change took 1.7 s once), ready 1.18 s (was 1.30). Overview frame 7.3–10.9 ms (was 12.4; noisy).

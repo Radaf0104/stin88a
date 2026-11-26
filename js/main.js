@@ -1,11 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { Pass, FullScreenQuad } from "three/addons/postprocessing/Pass.js";
-import { CopyShader } from "three/addons/shaders/CopyShader.js";
-import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { CONFIG } from "./config.js";
 import { materialFor, addBoxUVs, setLampGlow, allMaterials, startTextureLoading } from "./materials.js";
@@ -98,64 +92,14 @@ controls.maxDistance = 220;
 // Sky, sun and image-based light (day / golden hour / night)
 const env = createEnvironment(renderer, scene);
 const sun = env.sun;
-sun.shadow.mapSize.setScalar(quality.high ? (phone ? 2048 : 4096) : 1024);
+// (round 20) 2048 / 1024: the shadow box is ~68 m, so 3.3 / 6.6 cm per texel - no visible change at hero distance
+// (tools/out/r20_shadow_compare.jpg) and 48 MB less GPU memory than 4096 on desktop
+sun.shadow.mapSize.setScalar(quality.high && !phone ? 2048 : 1024);
 const mood = createMoodLights(scene, quality.high && !phone ? 6 : 3);
 
-// Post-processing: ambient occlusion (contact shadows) + soft bloom on lamps. High quality only.
-let composer = null, gtao = null, gradePass = null, bloomPass = null, scenePass = null;
-// The scene is drawn into its own 4× multisampled target (smooth edges; stencil for the section caps) and resolved once
-// into the composer's plain buffers. The post passes (bloom, tone mapping, grade) then work on single-sample buffers:
-// multisampling the composer's two ping-pong buffers made every full-screen pass pay a resolve (≈9 ms per frame).
-class MSAAScenePass extends Pass {
-  constructor(scene, camera) {
-    super();
-    this.scene = scene; this.camera = camera; this.needsSwap = false;
-    this.target = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4, stencilBuffer: true });
-    this.copy = new FullScreenQuad(new THREE.ShaderMaterial({ ...CopyShader, uniforms: THREE.UniformsUtils.clone(CopyShader.uniforms), depthTest: false, depthWrite: false }));
-  }
-  setSize(w, h) { this.target.setSize(w, h); }
-  render(renderer, writeBuffer, readBuffer) {
-    renderer.setRenderTarget(this.target);
-    renderer.clear();
-    renderer.render(this.scene, this.camera);
-    this.copy.material.uniforms.tDiffuse.value = this.target.texture;
-    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
-    this.copy.render(renderer);
-  }
-}
-function buildComposer() {
-  const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 0 });
-  composer = new EffectComposer(renderer, rt);
-  scenePass = new MSAAScenePass(scene, camera);
-  composer.addPass(scenePass);
-  gtao = new GTAOPass(scene, camera, innerWidth, innerHeight);
-  gtao.blendIntensity = 0.7;
-  gtao.normalMaterial.side = THREE.DoubleSide; // Revit triangles aren't consistently wound
-  gtao.updateGtaoMaterial({ radius: 0.25, distanceExponent: 2, thickness: 0.6, scale: 1 });
-  // The AO pass draws the scene once more into a normal/depth buffer. Two things must stay out of it:
-  // - the sky photo: drawn into that buffer it filled every pixel with invalid numbers (NaN), so AO came out as
-  //   "fully occluded" everywhere and simply darkened the whole picture (the old "AO dims everything" bug);
-  // - see-through things (floor hover boxes, coloured room volumes, glass), which it would treat as solid walls.
-  const hideForAO = gtao.overrideVisibility.bind(gtao), showAfterAO = gtao.restoreVisibility.bind(gtao);
-  let skyForAO = null;
-  gtao.overrideVisibility = () => {
-    hideForAO(); // (remembers every object's visibility first, so restoreVisibility() brings these back)
-    skyForAO = scene.background; scene.background = null;
-    // also leaf cards / ferns (cut-out textures look like solid squares to AO) and grass blades (marked noAO)
-    scene.traverse((o) => {
-      const m = o.isMesh && o.material && !Array.isArray(o.material) ? o.material : null;
-      if (m && (m.transparent || m.alphaTest > 0 || m.userData.noAO)) o.visible = false;
-    });
-  };
-  gtao.restoreVisibility = () => { showAfterAO(); scene.background = skyForAO; };
-  composer.addPass(gtao);
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.22, 0.5, 0.9);
-  composer.addPass(bloomPass);
-  composer.addPass(new OutputPass());
-  gradePass = createGradePass(); // colour grade on the final image (per time of day, set in setTime)
-  gradePass.setAspect(innerWidth / innerHeight);
-  composer.addPass(gradePass);
-}
+// (round 20) the old post-processing chain (composer, AO, bloom, grade pass) was never built any more: its code and
+// modules (~180 KB of JS) are gone. These stay null so the guarded calls below keep working.
+let composer = null, gtao = null, bloomPass = null, scenePass = null;
 // No post-processing: the scene is drawn straight to the screen (with the browser's own edge smoothing). The colour
 // grade that used to be a full-screen pass now runs at the end of every material (grade.js), and the sky photo is
 // drawn as an object so it is graded too. (Bloom and ambient occlusion were post effects and are gone.)
