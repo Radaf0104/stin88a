@@ -57,7 +57,8 @@ function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = fa
 // copy, so every copy keeps exactly its place. Mirrored copies (negative determinant) get a mirrored copy of the mesh
 // (x negated, winding flipped) and the instance matrix times diag(-1, 1, 1), so no instance has a negative scale.
 // Light meshes are still merged per material (mergeLevel) - instancing them would only add draw calls.
-const INST_MIN_TRIS = 400, INST_MIN_COPIES = 3;
+// (round 3: only meshes whose copies save >= INST_MIN_SAVED triangles - ~75 % of the saving in ~1/3 of the draw calls)
+const INST_MIN_TRIS = 400, INST_MIN_COPIES = 3, INST_MIN_SAVED = 5000;
 function instanceHeavy(doc) {
   const root = doc.getRoot(), scene = root.getDefaultScene() ?? root.listScenes()[0];
   const ext = doc.createExtension(EXTMeshGPUInstancing);
@@ -75,7 +76,7 @@ function instanceHeavy(doc) {
   }
   let nodesIn = 0, batches = 0;
   for (const g of groups.values()) {
-    if (g.items.length < INST_MIN_COPIES || tris(g.mesh) < INST_MIN_TRIS) continue;
+    if (g.items.length < INST_MIN_COPIES || tris(g.mesh) < INST_MIN_TRIS || tris(g.mesh) * (g.items.length - 1) < INST_MIN_SAVED) continue;
     for (const mirrored of [false, true]) {
       const items = g.items.filter((it) => (it.det < 0) === mirrored);
       if (!items.length) continue;

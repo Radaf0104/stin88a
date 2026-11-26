@@ -17,7 +17,7 @@ export const TIMES = {
   // fill = sky-blue from above + green bounce from the lawn; roomGlow = warm lit ceilings seen through the windows.
   // neutral: use the "PBR Neutral" tone curve, which keeps whites white and the sky blue (AgX greys them out in sun)
   // (1k versions of the 2k Poly Haven photos, made with tools/shrink-hdr.mjs: a quarter of the download, same look)
-  day:    { hdri: "assets/sky/autumn_field_puresky_1k.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xffefdc, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.04, skyHaze: 0.2, fill: [0xe2ebf4, 0x7a7d4a, 0.36],
+  day:    { hdri: "assets/sky/autumn_field_puresky_512.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xffefdc, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.04, skyHaze: 0.2, fill: [0xe2ebf4, 0x7a7d4a, 0.36],
             // (2026-11-26 reference render "3.jpg": sky #C0D3E3 -> #D5DDE3 at the horizon, a touch warmer sun, olive lawn bounce)
             // (exterior render: pale blue sky #C5D7E4, white plaster, neutral grey shade - so a cool sky fill and a
             // green-grey lawn bounce instead of the old yellow one, which turned the plaster peach)
@@ -46,9 +46,9 @@ export function createEnvironment(renderer, scene) {
   skyScene.add(sky);
   const nightSphere = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), new THREE.MeshBasicMaterial({ map: nightTexture(), side: THREE.BackSide, depthWrite: false }));
   skyScene.add(nightSphere);
-  // 256 per face = the same environment-map size the 1k sky photos produce (1024 / 4), so the shaders compiled with
-  // this stand-in sky stay valid when the photo arrives (a different size would rebuild every shader once)
-  const cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+  // 128 per face = the same environment-map size the 512 px day sky produces (512 / 4; round 3 of IMPROVEMENT_LOG.md:
+  // 1.1 MB -> 0.28 MB), so the shaders compiled with this stand-in stay valid when the photo arrives (no rebuild)
+  const cubeRT = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
   const cubeCam = new THREE.CubeCamera(1, 2000, cubeRT);
   skyScene.add(cubeCam);
 

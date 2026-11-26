@@ -10,35 +10,35 @@
   },
   {
    "L": "L1",
-   "gltf": 337,
-   "bin": 3320,
-   "meshes": 79,
-   "nodes": 98,
-   "tris": 195111
+   "gltf": 312,
+   "bin": 3443,
+   "meshes": 77,
+   "nodes": 96,
+   "tris": 204507
   },
   {
    "L": "L2",
-   "gltf": 505,
-   "bin": 2293,
-   "meshes": 96,
-   "nodes": 136,
-   "tris": 143014
+   "gltf": 380,
+   "bin": 2484,
+   "meshes": 82,
+   "nodes": 122,
+   "tris": 159302
   },
   {
    "L": "L3",
-   "gltf": 792,
-   "bin": 2173,
-   "meshes": 188,
-   "nodes": 257,
-   "tris": 129848
+   "gltf": 719,
+   "bin": 2361,
+   "meshes": 182,
+   "nodes": 250,
+   "tris": 143600
   },
   {
    "L": "L4",
-   "gltf": 958,
-   "bin": 2084,
-   "meshes": 266,
-   "nodes": 349,
-   "tris": 125813
+   "gltf": 927,
+   "bin": 2207,
+   "meshes": 262,
+   "nodes": 344,
+   "tris": 135929
   },
   {
    "L": "ROOF",
