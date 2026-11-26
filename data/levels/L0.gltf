@@ -1162,6 +1162,7 @@
   ],
   "scene": 0,
   "extensionsUsed": [
+    "EXT_mesh_gpu_instancing",
     "EXT_meshopt_compression",
     "KHR_mesh_quantization",
     "KHR_texture_basisu",

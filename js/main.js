@@ -403,7 +403,9 @@ if (USE_GLB) {
       if (OVERRIDE[name]) o.material = materialFor(OVERRIDE[name], {});
       o.castShadow = !o.material.transparent; o.receiveShadow = true;
       if (o.material.transparent) o.renderOrder = 3;
-      box.setFromObject(o);
+      // GPU-instanced furniture (tools/pack-levels.mjs instanceHeavy): its bounds cover every instance
+      if (o.isInstancedMesh) { o.computeBoundingBox(); o.computeBoundingSphere(); box.copy(o.boundingBox).applyMatrix4(o.matrixWorld); }
+      else box.setFromObject(o);
       o.userData.y = [box.min.y, box.max.y];
       if (ud.kind === "door") { if (!doorLeaves.includes(owner)) doorLeaves.push(owner); return; } // owner = the hinge pivot
       levelObjects.push(o);
@@ -413,10 +415,14 @@ if (USE_GLB) {
       // walk-mode collision: root-local, non-indexed triangles (as the Revit path builds them)
       if (ud.collide) {
         const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
-        const p = g.attributes.position, out = new Float32Array(p.count * 3);
-        m4.copy(o.matrixWorld);
-        for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m4); out[i * 3] = v3.x; out[i * 3 + 1] = v3.y; out[i * 3 + 2] = v3.z; }
-        collideChunks.push(out);
+        const p = g.attributes.position;
+        const im = new THREE.Matrix4(), n = o.isInstancedMesh ? o.count : 1; // instanced: every copy collides
+        for (let k = 0; k < n; k++) {
+          const out = new Float32Array(p.count * 3);
+          if (o.isInstancedMesh) { o.getMatrixAt(k, im); m4.multiplyMatrices(o.matrixWorld, im); } else m4.copy(o.matrixWorld);
+          for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m4); out[i * 3] = v3.x; out[i * 3 + 1] = v3.y; out[i * 3 + 2] = v3.z; }
+          collideChunks.push(out);
+        }
       }
       if (ud.lm_set && lightmapManifest[ud.lm_set] && o.geometry.attributes.uv1) { o.material = o.material.clone(); glbLightmapped.push(o); }
     });
@@ -628,9 +634,11 @@ function showBand(lo = -Infinity, hi = Infinity) {
   for (const o of levelObjects) o.visible = o.userData.y[1] >= lo && o.userData.y[0] <= hi && !o.userData.hidden;
   // from outside (building overview) the doors inside the building can't be seen: don't draw them
   const outside = state.floor === null && !state.walking;
-  if (outside) try { for (const d of spaces.doors) if (d.interior) d.pivot.visible = false; } catch {} // (spaces not built yet)
-  // nor the bathrooms: their fittings (instanced) and the Revit plumbing at the end of each building mesh
-  for (const o of levelObjects) if (outside && o.userData.bathroom) o.visible = false;
+  // (round 2 of the improvement log: the corridor entrance doors too - they face the enclosed corridors)
+  if (outside) try { for (const d of spaces.doors) if (d.interior || d.role === "entrance") d.pivot.visible = false; } catch {} // (spaces not built yet)
+  // nor the bathrooms: their fittings (instanced) and the Revit plumbing at the end of each building mesh; nor the TVs
+  // (on the inner walls, ~2 draw calls each)
+  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv")) o.visible = false;
   for (const m of buildingMeshes) {
     m.geometry.setDrawRange(0, outside ? m.userData.overviewVerts : Infinity);
     if (outside && !m.userData.overviewVerts) m.visible = false;

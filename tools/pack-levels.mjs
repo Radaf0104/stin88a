@@ -5,8 +5,8 @@
 // (colour / roughness: ETC1S, normal maps: UASTC) and shared by all levels (data/levels/tex/*.ktx2), written as
 // <level>.gltf + <level>.bin. Lightmaps -> data/levels/lm/*.ktx2 (ETC1S; --uastc-lightmaps for UASTC).
 // Prints the size of every file against the brief's budget.
-import { NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression } from "@gltf-transform/extensions";
+import { NodeIO, MathUtils } from "@gltf-transform/core";
+import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression, EXTMeshGPUInstancing } from "@gltf-transform/extensions";
 import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
 import { execFileSync } from "node:child_process";
@@ -50,6 +50,73 @@ function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = fa
 // lightmap (own UVs + lightmap texture). Grouped separately so the site can still tell them apart: ceilings (shown /
 // hidden), the building shell (shell / stair / railing / doorframe: drawn in the overview), bathroom fittings (hidden
 // in the overview), collision. Copies that share one mesh are written out per copy, so the file grows a little.
+
+// Download size (improvement log, round 2): ~36 % of all triangles are copies of the same furniture (06t template
+// rooms). Heavy shared meshes (>= INST_MIN_TRIS triangles, >= 3 copies) are written once and drawn as GPU instances
+// (EXT_mesh_gpu_instancing -> THREE.InstancedMesh): one node holding the mesh + a translation / rotation / scale per
+// copy, so every copy keeps exactly its place. Mirrored copies (negative determinant) get a mirrored copy of the mesh
+// (x negated, winding flipped) and the instance matrix times diag(-1, 1, 1), so no instance has a negative scale.
+// Light meshes are still merged per material (mergeLevel) - instancing them would only add draw calls.
+const INST_MIN_TRIS = 400, INST_MIN_COPIES = 3;
+function instanceHeavy(doc) {
+  const root = doc.getRoot(), scene = root.getDefaultScene() ?? root.listScenes()[0];
+  const ext = doc.createExtension(EXTMeshGPUInstancing);
+  const inDoor = (n) => { for (let p = n; p; p = p.getParentNode?.()) if (p.getExtras().kind === "door") return true; return false; };
+  const tris = (m) => m.listPrimitives().reduce((s, p) => s + (p.getIndices() ? p.getIndices().getCount() : p.getAttribute("POSITION").getCount()) / 3, 0);
+  const groups = new Map();
+  for (const node of root.listNodes()) {
+    const mesh = node.getMesh(), e = node.getExtras();
+    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || e.style_room || inDoor(node)) continue;
+    const w = node.getWorldMatrix();
+    const det = w[0] * (w[5] * w[10] - w[6] * w[9]) - w[1] * (w[4] * w[10] - w[6] * w[8]) + w[2] * (w[4] * w[9] - w[5] * w[8]);
+    const key = [root.listMeshes().indexOf(mesh), !!e.bathroom, !!e.collide].join("|");
+    if (!groups.has(key)) groups.set(key, { mesh, e, items: [] });
+    groups.get(key).items.push({ node, w, det });
+  }
+  let nodesIn = 0, batches = 0;
+  for (const g of groups.values()) {
+    if (g.items.length < INST_MIN_COPIES || tris(g.mesh) < INST_MIN_TRIS) continue;
+    for (const mirrored of [false, true]) {
+      const items = g.items.filter((it) => (it.det < 0) === mirrored);
+      if (!items.length) continue;
+      let mesh = g.mesh;
+      if (mirrored) { // a mirrored copy of the mesh: x negated (positions, normals, tangents), winding flipped
+        mesh = doc.createMesh(g.mesh.getName() + "_mirror");
+        for (const p0 of g.mesh.listPrimitives()) {
+          const p = p0.clone();
+          for (const sem of p.listSemantics()) {
+            const a = p.getAttribute(sem).clone(); p.setAttribute(sem, a);
+            if (sem === "POSITION" || sem === "NORMAL" || sem === "TANGENT") {
+              const el = []; for (let i = 0; i < a.getCount(); i++) { a.getElement(i, el); el[0] = -el[0]; a.setElement(i, el); }
+            }
+          }
+          if (p.getIndices()) { const idx = p.getIndices().clone(); const arr = idx.getArray(); for (let i = 0; i < arr.length; i += 3) { const t = arr[i + 1]; arr[i + 1] = arr[i + 2]; arr[i + 2] = t; } idx.setArray(arr); p.setIndices(idx); }
+          mesh.addPrimitive(p);
+        }
+      }
+      const n = items.length, T = new Float32Array(n * 3), R = new Float32Array(n * 4), S = new Float32Array(n * 3);
+      const t = [0, 0, 0], r = [0, 0, 0, 1], sc = [1, 1, 1];
+      items.forEach((it, i) => {
+        const m = Array.from(it.w);
+        if (mirrored) { m[0] = -m[0]; m[1] = -m[1]; m[2] = -m[2]; } // w * diag(-1, 1, 1): first column negated
+        MathUtils.decompose(m, t, r, sc);
+        T.set(t, i * 3); R.set(r, i * 4); S.set(sc, i * 3);
+      });
+      const buf = root.listBuffers()[0];
+      const batch = ext.createInstancedMesh()
+        .setAttribute("TRANSLATION", doc.createAccessor().setType("VEC3").setArray(T).setBuffer(buf))
+        .setAttribute("ROTATION", doc.createAccessor().setType("VEC4").setArray(R).setBuffer(buf))
+        .setAttribute("SCALE", doc.createAccessor().setType("VEC3").setArray(S).setBuffer(buf));
+      const node = doc.createNode(mesh.getName() + "_inst").setMesh(mesh).setExtension("EXT_mesh_gpu_instancing", batch)
+        .setExtras({ kind: g.e.kind ?? "furniture", level: g.e.level, bathroom: !!g.e.bathroom, collide: !!g.e.collide, instanced: n });
+      scene.addChild(node);
+      for (const it of items) it.node.dispose();
+      nodesIn += n; batches++;
+    }
+  }
+  return { nodesIn, batches };
+}
+
 const BUILDING = new Set(["shell", "stair", "railing", "doorframe"]);
 const STYLE_KEEP = new Set(["curtain", "lamp"]); // style-room parts the website moves / picks one by one
 function mergeLevel(doc, man) {
@@ -58,7 +125,7 @@ function mergeLevel(doc, man) {
   const groups = new Map();
   for (const node of root.listNodes()) {
     const mesh = node.getMesh(), e = node.getExtras();
-    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set] || (e.style_room && STYLE_KEEP.has(e.kind))) continue;
+    if (!mesh || node.listChildren().length || node.getExtension("EXT_mesh_gpu_instancing") || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set] || (e.style_room && STYLE_KEEP.has(e.kind))) continue;
     // style rooms (06s): merged too, but only within one room and one surface (js/roomstyle.js restyles them per room);
     // what moves or is picked on its own (curtains, lamps) stays a separate node
     const sk = e.style_room ? [e.style_room, e.surface ?? "", e.kind === "bed" ? "bed" : ""].join("/") : "";
@@ -125,6 +192,8 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
     for (const [k, v] of Object.entries(e)) if (!k.startsWith("BIM") && k !== "lm_margin") out[k] = v;
     n.setExtras(out);
   }
+  const ig = instanceHeavy(doc);
+  console.log(`${L}: ${ig.nodesIn} furniture copies -> ${ig.batches} GPU-instanced meshes`);
   const mg = mergeLevel(doc, LM_MAN);
   // Door leaves turn about their node's origin (the hinge, tools/blender/04_join.py). quantize() below moves a mesh
   // node's origin / scale to fit its quantized positions, which put the pivot in the middle of every leaf (doors

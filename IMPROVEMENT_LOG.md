@@ -33,3 +33,23 @@ restyled), which added ~310 draw calls.
 | scene triangles | 949 416 | 949 416 (geometry identical) |
 
 Checked: K.401 renders the same as before (`tools/out/r1_K401_merged.jpg`), with no console errors in a fresh tab.
+
+## Round 2: hide what can't be seen, instance the heavy furniture copies
+- **Overview culling (js/main.js showBand):** from outside, the TVs (on inner walls, ~2 draw calls each) and the corridor entrance doors are not drawn, like the interior doors and bathroom fittings already weren't. The floor and room views still show them (checked: 98 TV meshes and 42 entrance doors visible on Level 4).
+- **GPU instancing (tools/pack-levels.mjs instanceHeavy):**
+  - About 36 % of all triangles (310 k of 858 k) were copies of the same furniture: toilets, chairs, beds, basins from the template rooms.
+  - Shared meshes with ≥ 400 triangles and ≥ 3 copies are now written once and drawn as `EXT_mesh_gpu_instancing` → `THREE.InstancedMesh`, with one exact transform per copy.
+  - Mirrored copies use a pre-mirrored mesh (x negated, winding flipped), so no instance has a negative scale.
+  - Lighter meshes are still merged per material.
+- **js/main.js loader:** bounds of instanced meshes cover all instances, and walk-mode collision includes every instance.
+
+| metric | round 1 | after culling | after instancing |
+|---|---|---|---|
+| download (all) | 22.15 MB | 22.15 MB | **19.45 MB** (levels 20.03 → 17.52 MB in the pack report) |
+| draw calls (overview) | 593 | **495** | 574 (+79: each instanced primitive is a call) |
+| frame time (1280×720) | 12.3 ms | ~12–20 ms (noisy: hidden pane) | 12.2 ms |
+| scene triangles | 949 416 | 949 416 | 949 416 (same geometry) |
+| instanced meshes / instances | 0 | 0 | 148 / 569 |
+
+Checked: K.404 and K.408 (a mirrored copy) look the same as before, with fittings in place (`tools/out/r2_K404.jpg`, `r2_K408.jpg`). No console errors.
+**Next:** raise INST_MIN_TRIS (only the very heaviest meshes instanced) to win back draw calls; a lighter sky / environment (1.1 MB HDR); research ideas (pending).
