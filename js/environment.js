@@ -17,7 +17,9 @@ export const TIMES = {
   // fill = sky-blue from above + green bounce from the lawn; roomGlow = warm lit ceilings seen through the windows.
   // neutral: use the "PBR Neutral" tone curve, which keeps whites white and the sky blue (AgX greys them out in sun)
   // (1k versions of the 2k Poly Haven photos, made with tools/shrink-hdr.mjs: a quarter of the download, same look)
-  day:    { hdri: "assets/sky/autumn_field_puresky_512.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xffefdc, sunI: 5, env: 0.26, bg: 0.98, exposure: 1.8, skyDesat: 0.04, skyHaze: 0.2, fill: [0xe2ebf4, 0x7a7d4a, 0.36],
+  day:    { hdri: "assets/sky/autumn_field_puresky_512.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xffefdc, sunI: 6.8, env: 0.22, bg: 0.98, exposure: 1.2, skyDesat: 0.04, skyHaze: 0.15, fill: [0xe2ebf4, 0x7a7d4a, 0.28],
+            // (round 5 of IMPROVEMENT_LOG.md: exposure 1.8 -> 1.2 with a stronger sun - the high exposure lifted the blacks
+            // and pushed the plaster into the highlight shoulder: milky; measured against the hero render from its camera)
             // (2026-11-26 reference render "3.jpg": sky #C0D3E3 -> #D5DDE3 at the horizon, a touch warmer sun, olive lawn bounce)
             // (exterior render: pale blue sky #C5D7E4, white plaster, neutral grey shade - so a cool sky fill and a
             // green-grey lawn bounce instead of the old yellow one, which turned the plaster peach)
@@ -25,7 +27,7 @@ export const TIMES = {
             // indoors: neutral studio-room light + cool daylight through the window, lamps dimmed (they're "on" but daylight wins)
             roomEnv: 0.3, window: [0xeef3ff, 4],
             // colours matched by measurement to the client's elevation render: cream plaster, light honey timber, olive lawn
-            grade: { gain: 0.955, contrast: 1.08, saturation: 1.0, lift: 0.03, warm: [1.02, 1.0, 0.965], cool: [0.985, 1.0, 1.03], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0022 /* the masterplan site reaches ~150 m: lighter haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
+            grade: { gain: 0.955, contrast: 1.14, saturation: 1.04, lift: 0, warm: [1.045, 0.985, 0.955], cool: [0.99, 0.975, 1.02], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0015 /* the masterplan site reaches ~150 m: light haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
   golden: { hdri: "assets/sky/kloppenheim_06_puresky_1k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
             fill: [0xfff4e6, 0x9a8a72, 0.09], roomEnv: 0.22, window: [0xffcf9a, 2.5], skyDesat: 0.2, skyHaze: 0.5, roomGlow: 0.9, lamps: 0.9, glow: 0.4,
             grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },

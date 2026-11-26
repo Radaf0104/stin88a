@@ -79,3 +79,19 @@ The research measured the live site: building ready only after ~22 s, because th
 | L1.gltf requested at | 237 ms | **25 ms** |
 | ready (all floors, shaders compiled) | 1415 ms | **1229 ms** |
 | duplicate downloads | – | none |
+
+## Round 5: colour, matched to the hero render
+Measured from the hero render's own camera (gallery `r02`, terrace facade; new debug helper `STIN.renderCam(i)`), with frames downsampled to 200 px. The research's snippet gives luminance p5/p50/p95 and mean RGB.
+- **js/environment.js `TIMES.day`:**
+  - Exposure 1.8 → **1.2**, with a stronger sun (5 → 6.8). The high exposure was lifting the blacks and pushing the plaster into the highlight shoulder, which gave the milky look.
+  - Sky and env fill lower (env .26 → .22, ground fill .36 → .28), less haze (fog .0022 → .0015, skyHaze .2 → .15).
+  - Grade: lift .03 → 0, contrast 1.08 → 1.14, saturation 1.04. Highlights warmer and less green (R +4.5 %, G −1.5 %), shadows slightly cooler and less green.
+- Walk mode and room views use their own exposure, so interiors are unchanged (checked K.405 in walk: `tools/out/c2_walk_K405.jpg`).
+
+| | p5 / p50 / p95 | mean RGB |
+|---|---|---|
+| hero render (Unreal) | 33 / 136 / 232 | 142 / 142 / 133 |
+| V5 before | 99 / 170 / 239 | 156 / **166** / 151 (green) |
+| V5 after | 83 / 158 / 238 | 143 / 151 / 136 |
+
+The remaining gap in p5 is content, not tone: the render's darkest 5 % are trees and deep shade, which our scene doesn't have (lawn is its darkest large area). Pictures: `tools/out/c1_r02_before.jpg`, `c1_C_exp12_grade_env.jpg`.
