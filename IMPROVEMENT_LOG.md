@@ -202,3 +202,16 @@ Every variant was measured from the hero camera (luminance p5 / p50 / p95 | mean
 | **round 11** | **69 / 145 / 233** | **134 / 139 / 131** | #615e21 |
 
 Picture: `tools/out/r11_hero.jpg`. The remaining p5 / p50 gap is the histogram's shape (the render has ~22 % bright sky and deep tree shade), not the tone settings.
+
+## Round 12: material relief in the template rooms (assets, no geometry, no download)
+- **js/roomstyle.js:** the style rooms' materials take surface relief from the same procedural textures (js/proctex.js), with nothing new to download:
+  - fabric → woven bump (0.9) + roughness variation (bedding, sheets, throw, curtains, chair upholstery)
+  - bouclé → nubbly bump (1.6) + roughness variation (rug, sofa)
+  - veneer → fine grain bump (0.35)
+  - plaster (0.25), stone (0.3), travertine (0.4)
+- Shader programs 31 → 32. No geometry changed and no console errors. Close-up: `tools/out/r12_K413_close.jpg` (the bouclé sofa and woven bedding are visible; that scripted render lacks the room view's plain light, so it's darker than the real view).
+
+**Looked at and parked:**
+- **Deferring furniture to after the first view:** only ~25 % of the level geometry is furniture without walk-mode collision (the rest has to be there for walking), so the phone gain is modest for an invasive loader change.
+- **Lighter furniture:** simplifying it would change its shape, which the rules don't allow. The heavy shared pieces are already GPU-instanced (round 2/3).
+- **CC0 texture downloads** (Poly Haven fabrics) need the user's OK first. They're optional, since our procedural textures cost 0 bytes.

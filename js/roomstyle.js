@@ -83,6 +83,12 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     const m = new THREE.MeshStandardMaterial({ name: `RS_${R.u.label}_${key}`, roughness: rough, metalness: metal, envMapIntensity: 0.6 });
     if (t) m.map = tex[t];
     if (key === "floor" && tex.plankBump) { m.bumpMap = tex.plankBump; m.bumpScale = 0.6; }
+    // (round 12 of IMPROVEMENT_LOG.md) surface relief from the same procedural textures - no geometry, no download:
+    // a woven feel on linen / curtains / upholstery, a nubbly boucle on rug and sofa, fine grain on veneer and plaster,
+    // and the texture also breaks up the roughness a little, so big fabric areas don't read as flat plastic
+    const RELIEF = { fabric: 0.9, boucle: 1.6, veneer: 0.35, plaster: 0.25, stone: 0.3, travertine: 0.4 };
+    if (t && RELIEF[t] && !m.bumpMap) { m.bumpMap = tex[t]; m.bumpScale = RELIEF[t]; }
+    if (t === "fabric" || t === "boucle") m.roughnessMap = tex[t];
     m.userData.rsKey = key;
     R.mats[key] = m;
     return m;
