@@ -15,6 +15,7 @@
 // * URL: #K405-light (room + style) opens that room in that style.
 import * as THREE from "three";
 import { makeTextures } from "./proctex.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 export const STYLE_ROOMS = { "K.401": "signature", "K.405": "light", "K.407": "signature", "K.413": "signature", "K.416": "signature" };
 // palette colours (hex values as published by the reference's style presets; our own textures)
@@ -112,6 +113,54 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     if (key) o.material = material(R, key);
   }
   for (const R of rooms.values()) applyStyle(R, R.style);
+  // Draw calls: after restyling, many pieces of a room share one material (all its painted walls, its floor boards...).
+  // Their triangles are joined, per room and material, into one mesh in world space - every vertex stays exactly where
+  // it was (mirrored copies get their winding flipped back). Lamps, curtains, TVs and lights stay separate (they move,
+  // glow or are picked one by one), and so do bathroom fittings (hidden in the overview).
+  for (const R of rooms.values()) {
+    const groups = new Map();
+    for (const o of R.meshes) {
+      const k = o.userData.kind, m = o.material;
+      if (!o.parent || k === "lamp" || k === "curtain" || k === "tv" || R.emissive.includes(m) || !m?.userData?.rsKey) continue;
+      const key = m.uuid + (o.userData.bathroom ? "|b" : "") + (o.userData.kind === "bed" ? "|bed" : "");
+      if (!groups.has(key)) groups.set(key, []); groups.get(key).push(o);
+    }
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const geos = []; let y0 = Infinity, y1 = -Infinity;
+      for (const o of list) {
+        o.updateWorldMatrix(true, false);
+        let g = o.geometry.clone();
+        for (const name of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
+        if (!g.attributes.normal || !g.attributes.uv) { geos.length = 0; break; } // (all pieces here have both; never mix)
+        if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
+        // quantized attributes (meshopt: 16-bit, normalized) -> plain floats first, so world coordinates fit and the
+        // pieces can be joined (getX/Y/Z return the real, de-normalized values)
+        for (const name of ["position", "normal", "uv"]) {
+          const a = g.attributes[name];
+          if (a.array instanceof Float32Array && !a.normalized && !a.isInterleavedBufferAttribute) continue;
+          const f = new Float32Array(a.count * a.itemSize);
+          for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) f[i * a.itemSize + c] = a.getComponent(i, c);
+          g.setAttribute(name, new THREE.BufferAttribute(f, a.itemSize));
+        }
+        g.applyMatrix4(o.matrixWorld);
+        if (o.matrixWorld.determinant() < 0) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } }
+        g.computeBoundingBox(); y0 = Math.min(y0, g.boundingBox.min.y); y1 = Math.max(y1, g.boundingBox.max.y);
+        geos.push(g);
+      }
+      const merged = geos.length === list.length ? mergeGeometries(geos, false) : null;
+      for (const g of geos) g.dispose();
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, list[0].material);
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.userData = { ...list[0].userData, y: [y0, y1], merged: list.length };
+      scene.add(mesh);
+      // the pieces leave the scene and the per-floor visibility list (main.js levelObjects); the merged mesh takes their place
+      for (const o of list) { o.parent.remove(o); const i = objects.indexOf(o); if (i >= 0) objects.splice(i, 1); }
+      objects.push(mesh);
+      R.meshes = R.meshes.filter((o) => !list.includes(o)); R.meshes.push(mesh);
+    }
+  }
   // the rooms' doors: Nagoya timing (90 deg, ~0.91 s, easeInOutQuad), their leaves in the door veneer (glass stays)
   for (const R of rooms.values()) {
     const sp = spaces.unitSpace(R.u); R.sp = sp;

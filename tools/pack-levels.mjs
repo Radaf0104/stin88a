@@ -51,20 +51,24 @@ function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = fa
 // hidden), the building shell (shell / stair / railing / doorframe: drawn in the overview), bathroom fittings (hidden
 // in the overview), collision. Copies that share one mesh are written out per copy, so the file grows a little.
 const BUILDING = new Set(["shell", "stair", "railing", "doorframe"]);
+const STYLE_KEEP = new Set(["curtain", "lamp"]); // style-room parts the website moves / picks one by one
 function mergeLevel(doc, man) {
   const root = doc.getRoot(), scene = root.getDefaultScene() ?? root.listScenes()[0];
   const inDoor = (n) => { for (let p = n; p; p = p.getParentNode?.()) if (p.getExtras().kind === "door") return true; return false; };
   const groups = new Map();
   for (const node of root.listNodes()) {
     const mesh = node.getMesh(), e = node.getExtras();
-    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set] || e.style_room) continue; // style rooms (06s) stay separate meshes for js/roomstyle.js
+    if (!mesh || node.listChildren().length || e.kind === "tv" || e.tv || inDoor(node) || man[e.lm_set] || (e.style_room && STYLE_KEEP.has(e.kind))) continue;
+    // style rooms (06s): merged too, but only within one room and one surface (js/roomstyle.js restyles them per room);
+    // what moves or is picked on its own (curtains, lamps) stays a separate node
+    const sk = e.style_room ? [e.style_room, e.surface ?? "", e.kind === "bed" ? "bed" : ""].join("/") : "";
     const cls = e.kind === "ceiling" ? "ceiling" : BUILDING.has(e.kind) ? "building" : "furniture";
     const w = node.getWorldMatrix();
     const det = w[0] * (w[5] * w[10] - w[6] * w[9]) - w[1] * (w[4] * w[10] - w[6] * w[8]) + w[2] * (w[4] * w[9] - w[5] * w[8]);
     for (const prim of mesh.listPrimitives()) {
       if (prim.getMode() !== 4 || !prim.getIndices()) continue;   // triangles with indices (weld() made them indexed)
       const sem = prim.listSemantics().sort().join(",");
-      const key = [prim.getMaterial()?.getName() ?? "-", cls, !!e.bathroom, !!e.collide, sem].join("|");
+      const key = [prim.getMaterial()?.getName() ?? "-", cls, !!e.bathroom, !!e.collide, sem, sk].join("|");
       if (!groups.has(key)) groups.set(key, { cls, e, items: [] });
       groups.get(key).items.push({ node, prim, w, det });
     }
@@ -88,7 +92,8 @@ function mergeLevel(doc, man) {
     const mesh = doc.createMesh(key.split("|").slice(0, 2).join("_")).addPrimitive(joined);
     const kind = g.cls === "ceiling" ? "ceiling" : g.cls === "building" ? (g.e.kind || "shell") : "furniture";
     const node = doc.createNode(mesh.getName()).setMesh(mesh)
-      .setExtras({ kind, level: g.e.level, bathroom: !!g.e.bathroom, collide: !!g.e.collide, merged: g.items.length });
+      .setExtras({ kind: g.e.style_room && g.e.kind === "bed" ? "bed" : kind, level: g.e.level, bathroom: !!g.e.bathroom, collide: !!g.e.collide, merged: g.items.length,
+        ...(g.e.style_room ? { style_room: g.e.style_room, ...(g.e.surface ? { surface: g.e.surface } : {}) } : {}) });
     scene.addChild(node);
     for (const it of g.items) { if (!done.has(it.node)) done.set(it.node, new Set()); done.get(it.node).add(it.prim); }
     after += 1;
