@@ -257,3 +257,15 @@ No console errors on either profile. CPU and network throttling still can't be e
 | GPU textures | 64 | 64 (shared, no duplicate requests) |
 
 Checked: K.404 (packed UVs) has stone, walnut and tiles mapped as before (`tools/out/r14_K404.jpg`). K.401 (style room, raw metre UVs, procedural textures at 1.67 repeats = 0.6 m tiles) is intact. No console errors.
+
+## Round 15: runtime - draw calls in the overview
+**Measured** (visible draw calls in the overview, by kind): doors 94 (the balcony glass doors, 2–4 primitives each, seen through the facade), furniture 74, shell 71, and about 85 from the five style rooms' separate small dressing (lamps 20, cushions, rugs, curtains, decor; kept separate so it can be clicked), which from outside is only specks behind glass.
+- **js/main.js showBand:** in the overview, the style rooms' small dressing (lamp, led, decor, cushion, curtain, rug, plant) is not drawn, like the TVs and bathroom fittings. Floor and room views still show it (Level 4 floor view: all 20 style-room lamps visible).
+
+| | before | after |
+|---|---|---|
+| draw calls (overview, bench camera) | 515 | **469** |
+| GPU frame (1280×720, pane visible) | 5.4 ms | 4.4 ms |
+
+**Tried and reverted:** decoding meshopt in web workers (`MeshoptDecoder.useWorkers`). The building was ready later (629 / 675 ms vs 514 ms), because worker start-up costs more than decoding these mid-size buffers on the main thread.
+Start-up timeline now (local, desktop): building 514 ms → collision 653 ms → shaders compiled (compileAsync) 1011 ms → ready 1025 ms.

@@ -649,6 +649,9 @@ function toast(msg) {
 // ---------- draw only what can be seen; shadows are rendered once, not every frame ----------
 renderer.shadowMap.autoUpdate = false;
 let band = [-Infinity, Infinity];
+// (round 15) the style rooms' small dressing - kept as separate meshes so it can be clicked (js/roomstyle.js) - is only
+// specks behind glass from outside: ~45 draw calls in the overview for nothing
+const SMALL_DRESSING = new Set(["lamp", "led", "decor", "cushion", "curtain", "rug", "plant"]);
 function showBand(lo = -Infinity, hi = Infinity) {
   band = [lo, hi];
   for (const o of levelObjects) o.visible = o.userData.y[1] >= lo && o.userData.y[0] <= hi && !o.userData.hidden;
@@ -658,7 +661,7 @@ function showBand(lo = -Infinity, hi = Infinity) {
   if (outside) try { for (const d of spaces.doors) if (d.interior || d.role === "entrance") d.pivot.visible = false; } catch {} // (spaces not built yet)
   // nor the bathrooms: their fittings (instanced) and the Revit plumbing at the end of each building mesh; nor the TVs
   // (on the inner walls, ~2 draw calls each)
-  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv")) o.visible = false;
+  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv" || (o.userData.style_room && SMALL_DRESSING.has(o.userData.kind)))) o.visible = false;
   for (const m of buildingMeshes) {
     m.geometry.setDrawRange(0, outside ? m.userData.overviewVerts : Infinity);
     if (outside && !m.userData.overviewVerts) m.visible = false;
