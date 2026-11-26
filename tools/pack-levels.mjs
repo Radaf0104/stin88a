@@ -7,8 +7,8 @@
 // Prints the size of every file against the brief's budget.
 import { NodeIO, MathUtils } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu, EXTMeshoptCompression, EXTMeshGPUInstancing } from "@gltf-transform/extensions";
-import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive } from "@gltf-transform/functions";
-import { MeshoptEncoder, MeshoptDecoder } from "meshoptimizer";
+import { dedup, prune, weld, reorder, quantize, joinPrimitives, transformPrimitive, simplifyPrimitive } from "@gltf-transform/functions";
+import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from "meshoptimizer";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, basename, extname } from "node:path";
@@ -196,6 +196,27 @@ for (const file of readdirSync(RAW).filter((f) => f.endsWith(".gltf")).sort()) {
   const ig = instanceHeavy(doc);
   console.log(`${L}: ${ig.nodesIn} furniture copies -> ${ig.batches} GPU-instanced meshes`);
   const mg = mergeLevel(doc, LM_MAN);
+  // (round 7 of IMPROVEMENT_LOG.md) the facade's timber battens and the metal railings are thin elements repeated
+  // hundreds of times; most of their triangles are the 8 mm edge bevels (03_cleanup), invisible at viewing distance.
+  // Only these two materials are simplified, with an error bound of ~8 mm (converted to the mesh's own size) and
+  // locked borders (battens: unlocked - each slat face is its own piece, so locked borders would freeze every edge;
+  // the error bound still keeps every slat in place within ~8 mm). Never furniture, doors or the style rooms.
+  const THIN = /^M_(teak_batten|metal_dark)$/;
+  let thBefore = 0, thAfter = 0;
+  await MeshoptSimplifier.ready;
+  for (const n of doc.getRoot().listNodes()) {
+    const e = n.getExtras(), m = n.getMesh();
+    if (!m || e.style_room || e.kind === "door" || !["shell", "railing"].includes(e.kind)) continue;
+    for (const p of m.listPrimitives()) {
+      if (!p.getIndices() || !THIN.test(p.getMaterial()?.getName() ?? "")) continue;
+      const pos = p.getAttribute("POSITION"), mn = pos.getMin([]), mx = pos.getMax([]);
+      const radius = Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2;
+      thBefore += p.getIndices().getCount() / 3;
+      simplifyPrimitive(p, { simplifier: MeshoptSimplifier, ratio: 0, error: Math.min(0.01, 0.008 / Math.max(radius, 0.01)), lockBorder: !/batten/.test(p.getMaterial().getName()) });
+      thAfter += p.getIndices().getCount() / 3;
+    }
+  }
+  console.log(`${L}: battens + railings ${thBefore} -> ${thAfter} triangles`);
   // Door leaves turn about their node's origin (the hinge, tools/blender/04_join.py). quantize() below moves a mesh
   // node's origin / scale to fit its quantized positions, which put the pivot in the middle of every leaf (doors
   // spun on their centre). The leaf node keeps the hinge and its extras as a parent; the mesh moves to a child node,

@@ -379,6 +379,14 @@ if (USE_GLB) {
   const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
     import("three/addons/loaders/GLTFLoader.js"), import("three/addons/loaders/KTX2Loader.js"), import("three/addons/libs/meshopt_decoder.module.js")]);
   const ktx2 = new KTX2Loader().setTranscoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/basis/").detectSupport(renderer);
+  // The levels share their textures (data/levels/tex/*.ktx2). Loaded in parallel (round 4 preloads), each level's
+  // parser asked for the same files at the same moment - before any was cached - so ~3 MB downloaded twice. One
+  // promise per file: every texture is fetched and transcoded once and shared by all levels (round 7).
+  const ktxShared = new Map(), ktxLoad = ktx2.load.bind(ktx2);
+  ktx2.load = (url, onLoad, onProgress, onError) => {
+    if (!ktxShared.has(url)) ktxShared.set(url, new Promise((res, rej) => ktxLoad(url, res, onProgress, rej)));
+    ktxShared.get(url).then(onLoad, onError);
+  };
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2);
   lightmapManifest = await fetch("data/levels/lightmaps.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
   const lmCache = new Map();

@@ -107,3 +107,19 @@ Every device got the full desktop settings: a 4096² sun shadow map (~64 MB of G
 | pixel-density cap | 1.5 | **1.25** (≈30 % fewer pixels than 1.5 on a 3× phone screen) |
 
 Checked: both profiles load without console errors. There is no real phone GPU here to time it on.
+
+## Round 7: a regression fixed, lighter railings
+- **Bug found and fixed (introduced by round 4):** each level's glTF points at the same shared textures (`data/levels/tex/*.ktx2`). With the levels now loading in parallel, every level's parser requested the same files at the same moment, before any was cached, so ~3 MB of textures downloaded twice (download measured 22.4 MB). **js/main.js:** one shared promise per texture URL in front of the KTX2Loader, so each texture is fetched and transcoded once and shared by every level. Download is back to **19.04 MB** with 0 duplicates and 64 GPU textures.
+- **Railings (tools/pack-levels.mjs):** the metal railing meshes are simplified with an ~8 mm error bound (most of their triangles were 8 mm edge bevels) and locked borders. L2: 17 516 → 6 018 triangles; L3/L4: 6.9 k → 5.3 k. Visually unchanged (`tools/out/r7_railings.jpg`).
+- **Tried and dropped:**
+  - Simplifying the flat plaster shell gave only −2 %: our merged shell is already lean (5–11 k triangles per floor). The research saw the older live build.
+  - The facade's timber battens (70 k triangles on L1) don't simplify within 8 mm. Their triangles are real slat geometry, not bevels.
+
+| metric | round 6 | round 7 |
+|---|---|---|
+| download (measured in the browser) | 19.04 MB* | **19.04 MB**, 0 duplicate requests |
+| scene triangles | 949 416 | **934 580** |
+| draw calls (overview) | 515 | 515 |
+| ready (local) | 1229 ms | 1215 ms |
+
+\*Round 4 really downloaded 22.4 MB because of the duplicate textures. The 19.04 MB in rounds 4–6 was measured before the parallel requests started colliding.
