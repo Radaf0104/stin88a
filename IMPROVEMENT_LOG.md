@@ -679,3 +679,12 @@ Client (with screenshots of the room card, the levels panel and K.305 at night, 
   - Desktop and phone (375×812): K.305 day and night with room centre and bathroom lit.
   - × hides and the tab restores, for both panels; Back room → level → overview.
   - No new console errors.
+
+## Published: trees removed, loading screen, panels / Back / room lights live as e67286d (2026-11-27), user-approved ("Publish")
+- **Push**: rollback tag `v6-live-45bb0d0` pushed first (older tags unchanged), then `v6-webgpu` → `origin/main` as a fast-forward (`45bb0d0..e67286d`, no force). Pages served it after ~40 s.
+- **Live check** (classic):
+  - Ready 1.6 s; no tree requests; the new loading card is shown.
+  - K.305: room centre and bathroom lit; × hides the card and the tab restores it.
+  - Back goes room → level → overview.
+  - No failed requests, no console errors.
+- Returning visitors may see old files for up to 10 minutes (max-age 600).
