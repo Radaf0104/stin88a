@@ -67,7 +67,7 @@ function keyFor(o, name, inBath) {
 }
 const easeQuad = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
-export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch, onLights, borrowLights, releaseLights }) {
+export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch, onLights, borrowLights, releaseLights, loadTexture }) {
   const tex = makeTextures(renderer);
   const rooms = new Map(); // label -> { u, style, mats: {key: material}, meshes, emissive: [{m, base}], curtains, toggles }
   const unitByLabel = new Map(units.map((u) => [u.label, u]));
@@ -76,6 +76,30 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     rooms.set(label, { u, style: STYLE_ROOMS[label], mats: {}, meshes: [], emissive: [], curtains: [], lamps: [], toggles: [] });
   }
   const bathOf = (u) => u.bath?.outline ?? null;
+  // ---- (round 28) CC0 photo textures (Poly Haven, see ASSETS_LICENSES.md), fetched the first time a style room opens ----
+  // Each replaces one procedural slot: its colour turned into neutral grey detail (mean 0.85, so the room's palette
+  // still sets the hue) plus its real normal map, tiled at the texture's real size (the style rooms keep metre UVs).
+  const CC0 = { fabric: ["rough_linen", 0.27, 0.27], boucle: ["wool_boucle", 0.315, 0.39], veneer: ["oak_veneer_01", 1.83, 1.83], planks: ["laminate_floor_02", 1.7, 1.7] };
+  const NORMAL = { fabric: 0.8, boucle: 1.0, veneer: 0.5, planks: 0.6 };
+  let cc0 = null;
+  function applyCC0(m) {
+    const slot = FINISH[m.userData.rsKey]?.[0], c = cc0?.[slot];
+    if (!c?.d) return;
+    m.map = c.d; m.normalMap = c.n; m.normalScale.setScalar(NORMAL[slot]); m.bumpMap = null;
+    if (slot === "fabric" || slot === "boucle") m.roughnessMap = c.d;
+    m.needsUpdate = true;
+  }
+  function loadCC0() {
+    if (cc0 || !loadTexture) return;
+    cc0 = {};
+    const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    Promise.all(Object.entries(CC0).map(async ([slot, [id, sx, sy]]) => {
+      const [d, n] = await Promise.all([loadTexture(`data/levels/tex/cc0_${id}_detail.ktx2`), loadTexture(`data/levels/tex/cc0_${id}_nor.ktx2`)]);
+      for (const t of [d, n]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / sx, 1 / sy); t.colorSpace = THREE.NoColorSpace; t.anisotropy = aniso; t.needsUpdate = true; }
+      cc0[slot] = { d, n };
+    })).then(() => { for (const R of rooms.values()) for (const m of Object.values(R.mats)) applyCC0(m); invalidate(300); })
+      .catch((e) => console.warn("CC0 textures", e));
+  }
   // ---- materials ----
   function material(R, key) {
     if (R.mats[key]) return R.mats[key];
@@ -284,6 +308,7 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     enter(u, tv) {
       active = rooms.get(u.label) ?? null;
       if (!active) return;
+      loadCC0(); // (round 28, once)
       addTv(active, tv);
       // (round 26) from the room's own box: the merged "ceiling" mesh also holds pieces of other storeys (K.405's spans
       // 11.8-15.2 m), which had put the downlight under the room's floor

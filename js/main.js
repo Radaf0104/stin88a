@@ -352,6 +352,7 @@ function jitterInstanceUVs(m) {
   return c;
 }
 let lightmapManifest = {};
+let loadKtx = null; // url -> Promise<texture>, through the shared KTX2 loader below
 const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF"]; // (the 88A file's own SITE level is replaced by the masterplan site plan, see "Ground")
 if (USE_GLB) {
   const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
@@ -366,6 +367,7 @@ if (USE_GLB) {
     if (!ktxShared.has(url)) ktxShared.set(url, new Promise((res, rej) => ktxLoad(url, res, onProgress, rej)));
     ktxShared.get(url).then(onLoad, onError);
   };
+  loadKtx = (url) => new Promise((res, rej) => ktx2.load(url, res, undefined, rej)); // (round 28: the style rooms' CC0 set)
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2);
   lightmapManifest = await fetch("data/levels/lightmaps.json").then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
   const lmCache = new Map();
@@ -1895,7 +1897,8 @@ try {
   if (USE_GLB) roomStyle = createRoomStyle({ scene, camera, renderer, objects: levelObjects, spaces, units, levelY, planToWorld, inPoly,
     rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); },
     onLights: (label, e) => { accentRoomK.set(label, 0.15 + 0.85 * e); accents?.setRoom(label, 0.15 + 0.85 * e); },
-    borrowLights: (n) => mood.hold(n), releaseLights: (ls) => mood.release(ls) }); // (round 26: no lights of its own)
+    borrowLights: (n) => mood.hold(n), releaseLights: (ls) => mood.release(ls), // (round 26: no lights of its own)
+    loadTexture: loadKtx }); // (round 28: CC0 linen / boucle / oak / floor, fetched on the first style room opened)
 } catch (e) { console.warn("room styles", e); }
 async function buildAccents() {
   const a = await createAccents({ root, levelObjects });
