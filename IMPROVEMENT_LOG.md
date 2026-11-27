@@ -638,3 +638,12 @@ Client request: "add loading bar on the first page, or loading animation. then r
     - Info hide / show on the phone.
   - `?renderer=webgpu`: same flow, no errors.
   - No new console errors; all local requests 200.
+
+## Published: M6 + UI round live as 45bb0d0 (2026-11-27), user-approved ("Publish")
+- **Push**: rollback tag `v6-live-7e4e0d3` pushed first (older tags unchanged), then `v6-webgpu` → `origin/main` as a fast-forward (`7e4e0d3..45bb0d0`, no force). Pages served it after ~50 s; `js/walk.js` now returns 404.
+- **Live check** (classic):
+  - Ready 1.9 s; no Walk button; loading bar present.
+  - Level 1 site on, K.101 site off, Info chip shown.
+  - K.405 night: `#0d111c` with lights on; day: white.
+  - No failed requests, no console errors.
+- Returning visitors may see old files for up to 10 minutes (max-age 600).
