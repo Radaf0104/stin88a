@@ -2101,7 +2101,26 @@ try {
   sky.update(scene);
   // the start-up view's passes: the scene pass and (AO tiers) its depth pass; the plan-cut pass waits for warmUpRest
   const startPasses = compilePasses().slice(0, post?.quality.ao ? 2 : 1);
-  await Promise.all(startPasses.map((p) => compileFor(p, () => renderer.compileAsync(scene, camera))));
+  // (M6) new renderer: compiles are frustum-culled, so the intro fly to the eye-level view revealed objects the start
+  // camera hadn't framed, and one frame ~1.5 s after the site appeared built all of them at once (a ~3.4 s freeze).
+  // Now everything currently shown is sent to compile as well, un-culled for the synchronous moment compileAsync reads
+  // the scene. Only the start view's compile is awaited (~3 s); the rest (~11 s of GPU pipeline compiling, off the main
+  // thread) carries on while the site is shown. Textures are uploaded here too (they were uploaded on first use, in
+  // that same frame).
+  const startDone = Promise.all(startPasses.map((p) => compileFor(p, () => renderer.compileAsync(scene, camera))));
+  if (GPU) {
+    const unculled = [];
+    scene.traverse((o) => { if ((o.isMesh || o.isLine) && o.frustumCulled) { o.frustumCulled = false; unculled.push(o); } });
+    try { for (const p of startPasses) compileFor(p, () => renderer.compileAsync(scene, camera).then(() => mark("compiledAll")).catch(() => {})); }
+    finally { for (const o of unculled) o.frustumCulled = true; }
+  }
+  await startDone;
+  if (GPU) {
+    const texs = new Set();
+    scene.traverseVisible((o) => { for (const m of [].concat(o.material ?? [])) for (const k of ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "alphaMap", "bumpMap", "lightMap"]) if (m[k]?.isTexture) texs.add(m[k]); });
+    for (const t of texs) try { renderer.initTexture(t); } catch {}
+    timings.texUploads = texs.size;
+  }
   sky.restore(scene);
   mark("compiled");
   renderScene();

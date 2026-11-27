@@ -113,7 +113,10 @@ let loadingStarted = false;
 function fetchInto(t, url) {
   imgLoader.load(url, (img) => {
     t.image = img;
-    t.dispose(); // the 1-pixel stand-in was already uploaded: free it so the full-size photo gets new GPU storage
+    // the 1-pixel stand-in was already uploaded: free it so the full-size photo gets new GPU storage. (M6) Not on the
+    // new renderer: there a dispose invalidates every material bound to the texture (they all rebuilt, a ~3.4 s freeze
+    // just after start-up), and it re-creates the GPU texture by itself when the image size changes
+    if (!GPU) t.dispose();
     t.needsUpdate = true;
   });
 }

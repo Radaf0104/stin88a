@@ -44,7 +44,8 @@ createServer(async (req, res) => {
       res.end(data.subarray(start, end + 1));
       return;
     }
-    res.writeHead(200, { "Content-Type": type, "Accept-Ranges": "bytes", "Cache-Control": "no-cache" });
+    // (dev only) Document-Policy js-profiling: lets the page sample itself with the JS Self-Profiling API while testing
+    res.writeHead(200, { "Content-Type": type, "Accept-Ranges": "bytes", "Cache-Control": "no-cache", ...(type.startsWith("text/html") ? { "Document-Policy": "js-profiling" } : {}) });
     res.end(data);
   } catch {
     res.writeHead(404).end("Not found");

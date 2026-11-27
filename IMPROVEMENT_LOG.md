@@ -591,3 +591,22 @@ Both renderers (plain three.js): the classic site gets them too.
 - **Push**: rollback tag `v6-live-9a151f2` pushed first (`v5-live-cebeb71` and `v5-live-94e0ddf` unchanged), then `v6-webgpu` → `origin/main` as a fast-forward (`9a151f2..7e4e0d3`, 6 commits, no force). Pages served it after ~40 s.
 - **Live check**: 291 trees, ready 2.2 s, every request OK, no console errors. Returning visitors may see old files for up to 10 minutes (max-age 600).
 - Push notification sent.
+
+## M6 (v6-webgpu) — the WebGPU post-load freeze: 3.4 s → 1.2 s worst (user: "Fix the freeze")
+New renderer only. Classic unchanged (ready 1.2 s, no errors).
+- **How it was found**: the dev server now sends `Document-Policy: js-profiling` (serve.mjs, local only; GitHub Pages doesn't use it), so the page could sample itself with the JS Self-Profiling API. Long-animation-frame entries gave the attribution.
+  - The freeze was one render frame ~1.5 s after the site appeared, while the intro fly moved to the eye-level view.
+  - ~40 % of it was `writeTexture` (KTX2 photo textures uploaded on first use); ~50 % was node / pipeline builds for objects the start camera hadn't framed. Start-up compiles are frustum-culled, so those objects had never been compiled.
+- **Fix**:
+  - The start view's compile is still the only one awaited.
+  - At the same moment, everything currently shown is also sent to compile, un-culled only for the synchronous moment `compileAsync` reads the scene. Its ~11–14 s of GPU pipeline compiling then runs off the main thread while the site is shown.
+  - Every texture of the visible scene is uploaded under the loading screen (`initTexture`, 107 textures).
+  - Rejected: awaiting the full un-culled compile removed the freeze completely, but pushed ready from ~3 s to 12.6–13.5 s.
+- **Result** (WebGPU, 3 runs):
+  - Ready 2.9–3.3 s.
+  - Worst task after ready 1.12–1.17 s: objects drawn before their background pipelines finish.
+  - Smaller frames of 0.3–0.7 s, some with no script: browser / GPU work.
+  - Full compile done at ~17 s.
+- **Also**: `fetchInto` no longer disposes the stand-in texture on the new renderer (there a dispose invalidates every material bound to it). That path isn't used by the current levels, so it is a guard only.
+- **Found (both renderers)**: the day sky photo's arrival costs a ~0.5 s task: `analyse` + `paleSky` + M1's `groundedEnv` in environment.js, all per-pixel JavaScript on the HDR. It could run on a half-size copy or in a worker.
+- **Still open for making WebGPU the default**: the remaining ~1.2 s frame (options: hold the intro fly until the hero view's pipelines are ready; or fewer distinct pipelines), map mode and 360° viewer untested, AO stalls (Ultra).
