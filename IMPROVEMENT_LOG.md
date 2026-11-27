@@ -467,3 +467,26 @@ The default site is unchanged (classic WebGLRenderer, three r170). `?renderer=we
   3. 360° pano is untested.
   4. The procedural Sky stand-in is to be replaced by the TSL `SkyMesh`.
   5. The ~7 % brightness difference.
+
+## M2b (v6-webgpu) — WebGPU start-up fixed (user: "Fix start-up first")
+Profiled with long-task and per-callback timers in the built-in browser. There were three separate causes, all specific to the new renderer:
+1. **Compiled for the wrong target**: the start-up `compileAsync` built pipelines for the screen, but the new renderer draws into the post pass's own target (half float, 4× MSAA, depth + stencil). Every real pipeline was then built synchronously in the first frame (~6 s). It now compiles for `compileTarget()` (the pass's target; classic: the screen, unchanged).
+2. **The fog object**: `env.set` created a new `FogExp2` every time, and the new renderer keys every material's nodes on the fog object. `setTime("day")` straight after start-up rebuilt every material: a 2.7 s frame half a second after the page appeared. Every time-of-day switch would also have done it. Now one fog object changes colour and density (`setFog`).
+3. **The environment texture**: assigning a different texture to `scene.environment` also rebuilds every material (sky photo arriving, outdoor ↔ room light). The new renderer now uses one `pmremTexture` node for the session (`scene.environmentNode`), and a switch only changes the texture it reads (`setEnvTex`). Classic is unchanged.
+
+Also:
+- Before the first frame, only what the start camera sees is compiled. Compiling from the eye-level hero camera instead took ~9.5 s.
+- `warmUpRest()` then compiles every other mesh in batches of 8 in idle time, each batch shown and un-culled only for the synchronous moment `compileAsync` reads it.
+
+Measured (RTX 4060 laptop, built-in browser, local server, warm HTTP cache):
+
+| | Before (M2) | After |
+|---|---|---|
+| WebGPU ready | 8.4 s (shaders 6.0 s) | 2.0–3.2 s over 4 runs |
+| Worst frame after ready | 2.7 s (fog rebuild) | none > 150 ms; background warm-up done ~26 s after ready |
+| First floor click / overview / golden / day | — | no frame > 150 ms |
+| First K.405 room view | — | one 191 ms frame |
+| Classic ready | 1.1–1.8 s | 1.2 s, no errors |
+
+- Classic had 180 / 363 ms frames on floor and golden switches. They were not compared against before; they are likely pre-existing (they are independent of the new code paths).
+- Still open for making the new renderer the default: map mode (3d-tiles-renderer) and the 360° viewer untested; procedural sky stand-in; ~7 % brightness difference; cold-cache start-up (first ever visit, no browser shader cache) not measured here.

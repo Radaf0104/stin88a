@@ -121,6 +121,8 @@ scene.add(sky.mesh);
 // (M2) new renderer: the grade (and the old bloom's brightening) is one post-processing pass again, written in TSL;
 // materials stay untouched and the sky is the scene background
 const post = GPU ? createPost(renderer, scene, camera, grade.uniforms) : null;
+// where the scene is really drawn: shaders must be pre-compiled for this target (classic: the screen)
+const compileTarget = () => (post ? post.scenePass.renderTarget : null);
 // (M1) Architectural "shift lens": near eye level the picture is shifted up instead of tilting the camera, so the
 // building's verticals stay vertical, like the renders (3.jpg). The shift fades out as the camera rises above ~14 deg,
 // and is off while walking or inside a room. Only the projection changes (no extra cost); picking stays consistent
@@ -1981,7 +1983,9 @@ async function buildAccents() {
   a.setGlow(env.time?.glow ?? 0); a.setPlain(isoK);
   // compile their 3 shaders off-screen (shown for this synchronous moment only, no frame is drawn in between), then
   // let the current view decide what is visible
+  renderer.setRenderTarget(compileTarget());
   const compiling = meshes.map((m) => { m.visible = true; const p = renderer.compileAsync(m, camera, scene); m.visible = false; return p; });
+  renderer.setRenderTarget(null);
   showBand(band[0], band[1]);
   accents = a;
   await Promise.all(compiling).catch(() => {});
@@ -1995,15 +1999,46 @@ grade.patchScene(scene); // and the colour grade, at the end of every material (
 sitePlanReady.then((s) => { if (!s) return; grade.patchScene(s); refreshShadows(); invalidate(300); });
 const floorViewObjects = [...unitMeshes, ...bands, cap, capMesh];
 const wasVisible = floorViewObjects.map((o) => o.visible);
-floorViewObjects.forEach((o) => (o.visible = true));
+// (M2) new renderer: building a material's nodes is JavaScript work on the main thread, so before the first frame only
+// what the start camera sees is compiled (the whole building from afar: 2.0 s to ready; compiling from the eye-level
+// hero camera instead took ~9.5 s); everything else follows in small idle batches (warmUpRest)
+if (!GPU) floorViewObjects.forEach((o) => (o.visible = true));
 try {
-  renderer.setRenderTarget(null);
+  // (M2) the new renderer draws the scene into the post pass's own target (half float, 4x MSAA, depth + stencil), whose
+  // pipelines differ from the screen's: compiling for the screen left every real pipeline to be built synchronously
+  // in the first frame (~6 s). Compile for the target actually used.
+  renderer.setRenderTarget(compileTarget());
   sky.update(scene);
   await renderer.compileAsync(scene, camera);
   sky.restore(scene);
+  renderer.setRenderTarget(null);
+  mark("compiled");
   renderScene();
 } catch (e) { console.warn("shader pre-compile skipped", e); sky.restore(scene); }
 floorViewObjects.forEach((o, i) => (o.visible = wasVisible[i]));
+// (M2) new renderer: compile every remaining mesh (hidden dressing, interiors, doors, floor-view objects...) a few at a
+// time while the browser is idle, each batch shown and un-culled only for the synchronous moment compileAsync reads it
+// (no frame is drawn in between), so no first floor click / room visit stalls on building its shaders
+function warmUpRest() {
+  const all = [];
+  scene.traverse((o) => { if ((o.isMesh || o.isLine) && o.material) all.push(o); });
+  let i = 0;
+  const step = (deadline) => {
+    const t0 = performance.now();
+    while (i < all.length && (deadline ? deadline.timeRemaining() > 4 : performance.now() - t0 < 12)) {
+      const batch = all.slice(i, i + 8); i += 8;
+      const keep = batch.map((o) => { const k = []; for (let p = o; p; p = p.parent) k.push([p, p.visible]); return [k, o.frustumCulled]; });
+      for (const o of batch) { for (let p = o; p; p = p.parent) p.visible = true; o.frustumCulled = false; }
+      renderer.setRenderTarget(compileTarget());
+      for (const o of batch) renderer.compileAsync(o, camera, scene).catch(() => {});
+      renderer.setRenderTarget(null);
+      batch.forEach((o, j) => { for (const [p, v] of keep[j][0]) p.visible = v; o.frustumCulled = keep[j][1]; });
+    }
+    if (i < all.length) schedule(); else mark("warmUp");
+  };
+  const schedule = () => (window.requestIdleCallback ? requestIdleCallback(step, { timeout: 500 }) : setTimeout(step, 30));
+  schedule();
+}
 renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
@@ -2016,6 +2051,7 @@ ready = true;
 requestAnimationFrame(frame);
 leaveHeroWhenReady(); // the loading-screen render fades into the 3D view (and the intro camera move starts)
 if (USE_GLB) setTimeout(() => buildAccents().catch((e) => console.warn("room accents", e)), 0); // (round 23: after start-up)
+if (GPU) setTimeout(warmUpRest, 600); // (M2: after the intro has started)
 // #K405-light: open that style room (in that style) once the intro has faded
 { const hu = roomStyle?.fromHash(); if (hu) setTimeout(() => selectUnit(hu), 3200); }
 ui.loading.classList.add("done");

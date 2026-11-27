@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { GPU } from "./gpu.js";
+import { GPU, TSL } from "./gpu.js";
 const { Sky } = GPU ? { Sky: null } : await import("three/addons/objects/Sky.js");
 
 export const TIMES = {
@@ -45,6 +45,17 @@ export function createEnvironment(renderer, scene) {
   // Indoors the outdoor sky is the wrong reflection/ambient light (it tints walls blue and is far too even), so rooms
   // use a neutral "studio room" environment instead (three.js RoomEnvironment: soft white panels, like Nagoya Hill).
   const roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  // (M2) new renderer: assigning a different texture to scene.environment rebuilds every material's nodes (~2 s of
+  // JavaScript: a 2 s freeze when the sky photo arrived, and again on every switch between outdoor and room light).
+  // There, one PMREM node lights the whole session and a switch only changes the texture it reads.
+  const envNode = GPU ? TSL.pmremTexture(roomEnv) : null;
+  if (envNode) scene.environmentNode = envNode;
+  const setEnvTex = (t) => { if (envNode) envNode.value = t ?? roomEnv; else scene.environment = t; };
+  // (M2) the same for the haze: a new FogExp2 object (every time of day / sky photo) rebuilt every material's nodes on
+  // the new renderer (the 2.7 s freeze just after start-up); now the one fog object only changes colour and density
+  const setFog = (color, density) => {
+    if (scene.fog?.isFogExp2) { scene.fog.color.set(color); scene.fog.density = density; } else scene.fog = new THREE.FogExp2(color, density);
+  };
 
   // ---- fallbacks: procedural sky (day) and painted night sky ----
   const skyScene = new THREE.Scene();
@@ -100,10 +111,10 @@ export function createEnvironment(renderer, scene) {
       scene.backgroundRotation.set(0, rot, 0);
       scene.environmentRotation.set(0, rot, 0);
       envRT = pmrem.fromEquirectangular(h.envTex ?? h.tex);
-      scene.environment = envRT.texture;
+      setEnvTex(envRT.texture);
       const elev = t.sunElev != null ? THREE.MathUtils.degToRad(t.sunElev) : Math.max(h.elev, THREE.MathUtils.degToRad(6));
       sunDir.setFromSphericalCoords(1, Math.PI / 2 - elev, THREE.MathUtils.degToRad(t.sunAz));
-      scene.fog = new THREE.FogExp2(h.hazeFog ?? h.horizon, t.fogDensity);
+      setFog(h.hazeFog ?? h.horizon, t.fogDensity);
     } else {
       if (sky) sky.visible = !t.night;
       nightSphere.visible = !!t.night;
@@ -119,8 +130,8 @@ export function createEnvironment(renderer, scene) {
       envRT = pmrem.fromCubemap(cubeRT.texture);
       scene.background = cubeRT.texture;
       scene.backgroundRotation.set(0, 0, 0); scene.environmentRotation.set(0, 0, 0);
-      scene.environment = envRT.texture;
-      scene.fog = new THREE.FogExp2(t.fog ?? 0xc4d2dc, t.fogDensity);
+      setEnvTex(envRT.texture);
+      setFog(t.fog ?? 0xc4d2dc, t.fogDensity);
     }
     scene.backgroundIntensity = h ? t.bg ?? 1 : 1;
     renderer.toneMapping = t.neutral ? THREE.NeutralToneMapping : THREE.AgXToneMapping;
@@ -140,7 +151,7 @@ export function createEnvironment(renderer, scene) {
     const t = TIMES[current]; if (!t) return;
     const o = inside ? t.inside ?? {} : {};
     const roomLight = (inside && t.roomEnv) || plain > 0.5;
-    scene.environment = roomLight ? roomEnv : envRT?.texture ?? null;
+    setEnvTex(roomLight ? roomEnv : envRT?.texture ?? null);
     const env0 = inside && t.roomEnv ? t.roomEnv : o.env ?? t.env;
     scene.environmentIntensity = THREE.MathUtils.lerp(env0, PLAIN.env, plain);
     renderer.toneMappingExposure = THREE.MathUtils.lerp(o.exposure ?? t.exposure, PLAIN.exposure, plain);
