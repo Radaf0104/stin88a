@@ -6,7 +6,6 @@ import { materialFor, addBoxUVs, setLampGlow, allMaterials, startTextureLoading 
 // (js/landscape.js - generated trees, hills, grass - replaced by the site plan; kept in the repo for reference)
 import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
-import { createWalker } from "./walk.js";
 import { createMassing } from "./massing.js";
 import { createRoomStyle, STYLE_ROOMS } from "./roomstyle.js";
 import { createAccents } from "./accents.js";
@@ -17,8 +16,7 @@ import { createIsolation } from "./isolate.js";
 import { createSpaces } from "./spaces.js";
 import { GPU, FORCE_WEBGL, TSL } from "./gpu.js";
 import { createLookTSL } from "./materialsTSL.js";
-import { createFoliage, scatterTrees } from "./foliage.js";
-import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
+import { createFoliage } from "./foliage.js";
 
 // ---------- text ----------
 const STR = {
@@ -26,7 +24,7 @@ const STR = {
     overview: "Building overview", floors: "Floors", available: "Available", occupied: "Occupied",
     nAvail: (n) => `${n} available`, area: "Area", type: "Type", status: "Status", floor: "Floor", perMonth: "/ month",
     enter: "Room photos", pano360: "360° view", ask: "Ask on WhatsApp", day: "☀ Day", night: "☾ Night", hint: "Pick a floor to see the rooms",
-    hintFloor: "Click a room for details", drag: "Drag to look around · scroll to zoom · Space to walk around", close: "Close",
+    hintFloor: "Click a room for details", drag: "Drag to look around · scroll to zoom", close: "Close",
     assumed: "Layout assumed from Level 3 — confirm in Revit", unnamed: "Unnamed in Revit — needs a room number",
     wa: (u) => `Hi, I'm interested in room ${u} at ${CONFIG.project.name}.`,
     placeholder: "Placeholder — the 360° render from Unreal will appear here", loading: "Loading 3D model…", lang: "ID",
@@ -34,17 +32,15 @@ const STR = {
     nSpaces: (n) => `${n} shared spaces`, stepIn: "Step inside", photos: "Photos", exitRoom: "← Exit room",
     panMouse: "right-drag to move the view", panTouch: "two fingers to move the view", goTo: "Go to floor",
     hintInside: "Drag to look around", roomPhotos: "Room photos", seeAngle: "See this angle in 3D", back: "Back to 3D",
-    time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", walk: "🚶 Walk", hq: "HQ", lite: "Lite",
-    exitWalk: "✕ Exit walk", walkHere: "🚶 Walk around", bath: "bathroom",
+    time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", hq: "HQ", lite: "Lite",
+    bath: "bathroom",
     massing: "▢ Massing", mapOn: "🌍 Map", mapOff: "🌿 Site plan",mapNoKey: "The real-world map needs a Google Maps API key: add googleMapsKey in js/config.js.",
-    walkHintMouse: "Click to look around · WASD / arrows to move · click a door to open it · click the stairs or lift to change floor · Esc releases the mouse",
-    walkHintTouch: "Left thumb: move · Right thumb: look · tap a door to open it · tap the stairs or lift to change floor",
   },
   id: {
     overview: "Tampilan gedung", floors: "Lantai", available: "Tersedia", occupied: "Terisi",
     nAvail: (n) => `${n} tersedia`, area: "Luas", type: "Tipe", status: "Status", floor: "Lantai", perMonth: "/ bulan",
     enter: "Foto kamar", pano360: "Tampilan 360°", ask: "Tanya via WhatsApp", day: "☀ Siang", night: "☾ Malam", hint: "Pilih lantai untuk melihat kamar",
-    hintFloor: "Klik kamar untuk detail", drag: "Geser untuk melihat sekeliling · scroll untuk zoom · Spasi untuk berjalan", close: "Tutup",
+    hintFloor: "Klik kamar untuk detail", drag: "Geser untuk melihat sekeliling · scroll untuk zoom", close: "Tutup",
     assumed: "Tata letak diasumsikan dari Lantai 3 — cek di Revit", unnamed: "Belum bernama di Revit — perlu nomor kamar",
     wa: (u) => `Halo, saya tertarik dengan kamar ${u} di ${CONFIG.project.name}.`,
     placeholder: "Contoh — render 360° dari Unreal akan tampil di sini", loading: "Memuat model 3D…", lang: "EN",
@@ -52,11 +48,9 @@ const STR = {
     nSpaces: (n) => `${n} ruang bersama`, stepIn: "Masuk ke kamar", photos: "Foto", exitRoom: "← Keluar",
     panMouse: "klik kanan + geser untuk menggeser tampilan", panTouch: "dua jari untuk menggeser tampilan", goTo: "Pergi ke lantai",
     hintInside: "Geser untuk melihat sekeliling", roomPhotos: "Foto kamar", seeAngle: "Lihat sudut ini di 3D", back: "Kembali ke 3D",
-    time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", walk: "🚶 Jalan", hq: "HQ", lite: "Ringan",
-    exitWalk: "✕ Selesai", walkHere: "🚶 Jalan-jalan", bath: "kamar mandi",
+    time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", hq: "HQ", lite: "Ringan",
+    bath: "kamar mandi",
     massing: "▢ Massa", mapOn: "🌍 Peta", mapOff: "🌿 Rencana tapak",mapNoKey: "Peta dunia nyata butuh API key Google Maps: isi googleMapsKey di js/config.js.",
-    walkHintMouse: "Klik untuk melihat · WASD / panah untuk berjalan · klik pintu untuk membuka · klik tangga atau lift untuk pindah lantai · Esc melepas mouse",
-    walkHintTouch: "Jempol kiri: jalan · Jempol kanan: lihat · ketuk pintu untuk membuka · ketuk tangga atau lift untuk pindah lantai",
   },
 };
 let lang = CONFIG.defaultLanguage;
@@ -149,7 +143,7 @@ const lensV = new THREE.Vector3();
 function applyLens() {
   camera.updateProjectionMatrix(); // resets any previous shift
   let inRoom = false; try { inRoom = !!roomView; } catch {} // (declared further down; a shadow refresh can render first)
-  if (state.walking || inRoom) return;
+  if (inRoom) return;
   lensV.subVectors(camera.position, controls.target);
   const elev = Math.asin(THREE.MathUtils.clamp(lensV.y / (lensV.length() || 1), -1, 1));
   const s = LENS_SHIFT * THREE.MathUtils.clamp(1 - elev / LENS_FADE, 0, 1);
@@ -315,9 +309,6 @@ const capStencilMat = new THREE.MeshBasicMaterial({
   stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc,
   stencilFail: THREE.InvertStencilOp, stencilZFail: THREE.InvertStencilOp, stencilZPass: THREE.InvertStencilOp,
 });
-// Collisions for walk mode: doors are left out so doorways are walkable; small fixtures/TVs too.
-const NO_COLLIDE = new Set(["Doors", "Communication Devices", "Specialty Equipment", "Plumbing Fixtures", "Lighting Fixtures",
-  "Furniture", "Casework"]); // furniture & built-in joinery are walk-through
 const geoFrom = (chunks) => {
   const n = chunks.reduce((a, c) => a + c.length, 0), pos = new Float32Array(n);
   let o = 0; for (const c of chunks) { pos.set(c, o); o += c.length; }
@@ -328,7 +319,7 @@ const geoFrom = (chunks) => {
 // Every drawable piece remembers its height range, so whole floors can be skipped when they can't be seen.
 const levelObjects = [];
 const track = (obj) => { obj.geometry.computeBoundingBox(); const b = obj.geometry.boundingBox; obj.userData.y = [b.min.y, b.max.y]; levelObjects.push(obj); return obj; };
-const byMat = new Map(), capChunks = [], collideChunks = [];
+const byMat = new Map(), capChunks = [];
 for (const g of USE_GLB ? [] : model.groups) {
   const src = new Float32Array(geoBuf, g.offset * 4, g.count);
   const pos = new Float32Array(g.count);
@@ -340,7 +331,6 @@ for (const g of USE_GLB ? [] : model.groups) {
   byMat.get(key).chunks.push(pos);
   byMat.get(key).meta.push({ category: g.category, level: g.level });
   if (CAP_CATS.has(g.category)) capChunks.push(pos);
-  if (!NO_COLLIDE.has(g.category)) collideChunks.push(pos);
 }
 const doorChunks = []; // where each door's triangles sit inside the merged meshes (see spaces.js)
 const ceilingChunks = [], tvChunks = []; // ceilings (hidden in the room view) and TVs (clickable there)
@@ -505,20 +495,6 @@ if (USE_GLB) {
       if (ud.kind === "ceiling") ceilingObjs.push(o);
       if (ud.kind === "tv") tvObjs.push(o);
       if (["shell", "ceiling", "stair", "railing", "doorframe"].includes(ud.kind)) { o.userData.overviewVerts = Infinity; buildingMeshes.push(o); }
-      // walk-mode collision: root-local, non-indexed triangles (as the Revit path builds them). (round 24) Not the
-      // ceilings (above the walker's head) nor the facade battens (outside every walkable area): 338k -> ~261k
-      // triangles, so the collision tree - built before the first frame - is quicker to make
-      if (ud.collide && ud.kind !== "ceiling" && !/^M_teak_batten/.test(o.material?.name ?? "")) {
-        const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
-        const p = g.attributes.position;
-        const im = new THREE.Matrix4(), n = o.isInstancedMesh ? o.count : 1; // instanced: every copy collides
-        for (let k = 0; k < n; k++) {
-          const out = new Float32Array(p.count * 3);
-          if (o.isInstancedMesh) { o.getMatrixAt(k, im); m4.multiplyMatrices(o.matrixWorld, im); } else m4.copy(o.matrixWorld);
-          for (let i = 0; i < p.count; i++) { v3.fromBufferAttribute(p, i).applyMatrix4(m4); out[i * 3] = v3.x; out[i * 3 + 1] = v3.y; out[i * 3 + 2] = v3.z; }
-          collideChunks.push(out);
-        }
-      }
       if (ud.lm_set && lightmapManifest[ud.lm_set] && o.geometry.attributes.uv1) { o.material = o.material.clone(); glbLightmapped.push(o); }
     });
   }
@@ -679,7 +655,7 @@ async function compileQuietly(obj) {
   await Promise.all(all).catch(() => {});
 }
 let foliage = null;
-const foliageReady = Promise.all([sitePlanReady, massingReady]).then(async ([site, mass]) => {
+const foliageReady = Promise.all([sitePlanReady, massingReady]).then(async ([site]) => {
   if (!site || qs.get("trees") === "0" || !loadKtx) return null;
   const t0 = performance.now();
   const lawn = site.getObjectByName("siteplan_grass");
@@ -701,27 +677,11 @@ const foliageReady = Promise.all([sitePlanReady, massingReady]).then(async ([sit
     const i = sitePlanMats.indexOf(old); if (i >= 0) sitePlanMats[i] = m;
     invalidate(300);
   }).catch((e) => console.warn("lawn", e)) : null;
-  // ground hits: the site plan meshes get a bounding-volume tree (three-mesh-bvh, already loaded for walking), one ray
-  // per candidate (plain raycasts took ~1.2 s per pass over ~1000 points)
-  const hitables = []; site.traverse((o) => o.isMesh && hitables.push(o));
-  for (const o of hitables) { o.geometry.boundsTree ??= new MeshBVH(o.geometry); o.raycast = acceleratedRaycast; }
-  const keepBoxes = [buildingBox.clone().expandByScalar(5)];
-  mass?.group?.traverse?.((o) => { if (o.isMesh) keepBoxes.push(new THREE.Box3().setFromObject(o).expandByScalar(3)); });
-  const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3(), hits = new Map();
-  ray.firstHitOnly = true;
-  const hitAt = (x, z) => {
-    const k = x + "," + z; if (hits.has(k)) return hits.get(k);
-    from.set(x, 200, z); ray.set(from, down);
-    const h = ray.intersectObjects(hitables, false).sort((a, b) => a.distance - b.distance)[0] ?? null;
-    hits.set(k, h); return h;
-  };
-  const heroLawn = (x, z) => x > -32 && x < 32 && z > buildingBox.max.z && z < buildingBox.max.z + 60;
-  const places = scatterTrees({
-    bounds: new THREE.Box3().setFromObject(lawn ?? site),
-    isLawn: (x, z) => hitAt(x, z)?.object === lawn,
-    groundY: (x, z) => hitAt(x, z)?.point.y ?? null,
-    keepOut: (x, z) => heroLawn(x, z) || keepBoxes.some((b) => x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z),
-  });
+  // (UI round) the tree places are baked (data/trees.json, 17 KB): scatterTrees() in js/foliage.js once placed them on
+  // the lawns with raycasts against the site plan (clear of the building, the neighbour blocks, roads / pads and the
+  // lawn in front of the terrace facade). Baking drops those raycasts and the three-mesh-bvh library they needed.
+  const baked = await fetch("data/trees.json").then((r) => r.json());
+  const places = baked.places.map(([species, x, y, z, scale, turn, lean, r, g, b]) => ({ species, x, y, z, scale, turn, lean, tint: [r, g, b] }));
   timings.treeScatter = Math.round(performance.now() - t0);
   const f = createFoliage({ places, loadKtx, phone, anisotropy: TEX_ANISO });
   for (const m of f.materials) grade.patch(m);
@@ -755,7 +715,7 @@ const radius = Math.max(size.x, size.z) * 0.5;
 // is moved back by the same amount, so the view simply stops at the edge instead of turning.
 const panLimit = new THREE.Box3(), panPrev = new THREE.Vector3();
 function clampPan() {
-  if (state.inside || state.walking) return;
+  if (state.inside) return;
   const margin = ready && map.on ? 400 : Math.max(12, radius * 0.6);
   panLimit.copy(buildingBox).expandByVector(new THREE.Vector3(margin, 0, margin));
   panLimit.min.y = 0; panLimit.max.y += 3;
@@ -768,14 +728,6 @@ controls.addEventListener("change", clampPan);
 const sc = sun.shadow.camera;
 sc.left = sc.bottom = -radius * 1.4; sc.right = sc.top = radius * 1.4; sc.near = 1; sc.far = radius * 8;
 
-// Walk-mode collision mesh (world coordinates) + a floor under the whole site
-const siteFloor = new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2).translate(0, -0.25, 0).toNonIndexed();
-collideChunks.push(...[siteFloor.attributes.position.array].map((a) => a.map((v, i) => (i % 3 === 0 ? v + c.x : i % 3 === 2 ? v + c.z : v))));
-const collideGeo = geoFrom(collideChunks);
-collideGeo.translate(-c.x, 0, -c.z);
-mark("collisionMerge");
-const walker = createWalker({ camera, dom: canvas, geometry: collideGeo, onExit: () => exitWalk() });
-mark("collision");
 
 // ---------- landscape ----------
 // The generated trees, distant hills and 3D grass were replaced by the site plan (see "Ground" above). The calls the
@@ -787,7 +739,7 @@ clipped.add(landscape.group);
 const map = createMap({ scene, camera, renderer, site: CONFIG.site ?? {}, apiKey: CONFIG.googleMapsKey });
 let mapWanted = false;
 function applyMap() {
-  const cut = clipPlane.constant < 1e5 && !state.walking; // a plan cut would slice the hills, so pause the map
+  const cut = clipPlane.constant < 1e5; // a plan cut would slice the hills, so pause the map
   const on = mapWanted && !cut;
   const was = map.on;
   map.set(on);
@@ -813,7 +765,7 @@ function showBand(lo = -Infinity, hi = Infinity) {
   band = [lo, hi];
   for (const o of levelObjects) o.visible = o.userData.y[1] >= lo && o.userData.y[0] <= hi && !o.userData.hidden;
   // from outside (building overview) the doors inside the building can't be seen: don't draw them
-  const outside = state.floor === null && !state.walking;
+  const outside = state.floor === null;
   // (round 2 of the improvement log: the corridor entrance doors too - they face the enclosed corridors)
   if (outside) try { for (const d of spaces.doors) if (d.interior || d.role === "entrance") d.pivot.visible = false; } catch {} // (spaces not built yet)
   // the exterior doors: their static stand-in in the overview (round 16), the real hinged leaves everywhere else
@@ -900,9 +852,8 @@ for (const u of units) {
 // ---------- isolation (floor / room / walk views) and the walkable spaces with their doors ----------
 const iso = createIsolation();
 iso.setBounds(buildingBox, 6);
-const probeRay = new THREE.Ray();
 const spaces = createSpaces({ model, units, levelY, root, buildingBox, doorChunks, doorLeaves: USE_GLB ? doorLeaves : null,
-  probe: (o, dir, min, max) => { const h = walker.raycastAll(probeRay.set(o, dir)).find((x) => x.distance > min); return h && h.distance < max ? h.distance : null; } });
+  probe: null }); // (the probe found balcony railings for walking; walk mode was removed)
 for (const d of spaces.doors) { d.pivot.userData.y = [d.box.min.y, d.box.max.y]; levelObjects.push(d.pivot); } // drawn per floor like the rest
 
 // (round 16) The overview draws the exterior doors (balcony glass, fixed leaves) closed and never moves them, yet each
@@ -1063,7 +1014,7 @@ function setIsoK(k) {
   const outsideOn = k < 1 && !map.on;
   ground.visible = landscape.group.visible = outsideOn; // fully faded: not drawn at all
   // fully faded: the floors under the isolated one aren't drawn either (they were only being dissolved)
-  if (!state.walking && state.floor !== null) showBand(k >= 1 ? levelY[state.floor] - 0.6 : -Infinity, clipPlane.constant);
+  if (state.floor !== null) showBand(k >= 1 ? levelY[state.floor] - 0.6 : -Infinity, clipPlane.constant);
   if (k === 0 && savedSky) { savedSky = null; refreshShadows(); }
   invalidate(100);
 }
@@ -1127,6 +1078,10 @@ function setWindowRoom(u) {
 }
 const insideBar = $("insideBar");
 const savedControls = {};
+// (UI round) walls / furniture along a ray, nearest first: plain raycasts against the drawn level meshes (the walk
+// mode's collision tree is gone; this runs a few rays only when a room is entered)
+const solidRay = new THREE.Raycaster();
+function solidHits(ray) { solidRay.ray.copy(ray); solidRay.far = 30; return solidRay.intersectObjects(levelObjects.filter((o) => o.isMesh), false); }
 function enterRoom(u) {
   state.unit = u;
   state.inside = u;
@@ -1140,12 +1095,12 @@ function enterRoom(u) {
   // Back away from the window toward the entry, but stop before the wardrobe / bathroom wall (first thing hit).
   pos.y = floorY + 1.6;
   const back = new THREE.Vector3(); back[ax] = -out;
-  const hit = walker.raycastAll(new THREE.Ray(pos.clone(), back)).find((h) => h.distance > 0.05);
+  const hit = solidHits(new THREE.Ray(pos.clone(), back)).find((h) => h.distance > 0.05);
   const room = (b.max[ax] - b.min[ax]) / 2 - 0.45;
   pos[ax] -= out * Math.max(0, Math.min(room, (hit ? hit.distance : room) - 0.35));
   // ...and centre it between the side walls at that spot (rooms aren't always a clean rectangle)
   const side = ax === "x" ? "z" : "x", sdir = new THREE.Vector3();
-  const sideHit = (s) => { sdir.set(0, 0, 0); sdir[side] = s; return walker.raycastAll(new THREE.Ray(pos.clone(), sdir.clone())).find((h) => h.distance > 0.02 && h.distance < 4); };
+  const sideHit = (s) => { sdir.set(0, 0, 0); sdir[side] = s; return solidHits(new THREE.Ray(pos.clone(), sdir.clone())).find((h) => h.distance > 0.02 && h.distance < 4); };
   const l = sideHit(-1), r = sideHit(1);
   if (l && r) pos[side] = (l.point[side] + r.point[side]) / 2;
   look[side] = pos[side];
@@ -1333,7 +1288,7 @@ function updateRoomCut() {
 // What can be clicked in the room view: the room's doors and its TV
 const roomRay = new THREE.Raycaster();
 function roomPick(e) {
-  if (!roomView || state.walking || state.inside) return null;
+  if (!roomView || state.inside) return null;
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   roomRay.setFromCamera(ndc, camera);
@@ -1343,7 +1298,7 @@ function roomPick(e) {
   return roomRay.intersectObjects(list, false).find((h) => h.point.y < clipPlane.constant) ?? null;
 }
 function roomClick(e) {
-  if (roomStyle?.active && !state.walking && !state.inside) return roomStyle.click(e, clipPlane.constant); // style rooms: their own toggles
+  if (roomStyle?.active && !state.inside) return roomStyle.click(e, clipPlane.constant); // style rooms: their own toggles
   const h = roomPick(e);
   if (!h) return false;
   const tv = h.object.userData.tv;
@@ -1406,17 +1361,8 @@ function renderUI() {
   if (state.inside) $("insideTitle").textContent = state.inside.kind === "space" ? L(state.inside.space.label)
     : `${state.inside.label} · ${L(CONFIG.types[state.inside.type]?.label) ?? ""}`;
   ui.dayNight.textContent = t("time_" + (env.current ?? "day"));
-  ui.dayNight.style.display = state.floor === null && !state.walking ? "" : "none"; // floor / room views have plain light
-  $("walkBtn").textContent = t("walk");
+  ui.dayNight.style.display = state.floor === null ? "" : "none"; // floor / room views have plain light
   massing?.setLang(lang);
-  $("walkExit").textContent = t("exitWalk");
-  $("walkHint").textContent = matchMedia("(pointer: fine)").matches ? t("walkHintMouse") : t("walkHintTouch");
-  $("insideWalk").textContent = t("walkHere");
-  $("walkFloors").innerHTML = `<div class="menu-title">${t("goTo")}</div>` + CONFIG.floors.slice().sort((a, b) => b.level - a.level) // top floor first
-    .map((f) => `<button class="chip${state.walkLevel === f.level ? " on" : ""}" data-l="${f.level}">${L(f.label)}</button>`).join("") +
-    `<button class="chip" data-close>${t("close")}</button>`;
-  // Walk is offered in the floor view (start at the stairs) and on a room's card (start at its entrance)
-  $("walkBtn").style.display = state.floor !== null && !state.unit && !state.walking ? "" : "none";
   ui.langBtn.textContent = t("lang");
   $("galleryBtn").textContent = "▦ " + t("renders");
   $("galleryBtn").style.display = RENDERS.length ? "" : "none";
@@ -1434,13 +1380,10 @@ function showSpaceCard(u) {
     <h2>${L(u.space.label)}</h2>
     <div class="sub">${floorLabel} · ${u.area.toFixed(0)} m²</div>
     <p style="font-size:14px;line-height:1.5;margin:0 0 14px">${L(u.space.text) ?? ""}</p>
-    ${isVilla(u) ? "" : `<button class="btn primary" id="stepBtn">${t("walk")}</button>`}
     <button class="btn" id="enterBtn" style="border:1px solid var(--panel-border)">${t("photos")}</button>
     ${u.space.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}`;
   ui.card.classList.remove("hidden");
   ui.card.querySelector(".close").onclick = () => selectFloor(u.level);
-  const sb = ui.card.querySelector("#stepBtn");
-  if (sb) sb.onclick = () => startWalk(stairStartAt(u.level)); // communal area: start at the stairs
   ui.card.querySelector("#enterBtn").onclick = () => openPhotosFor(u);
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
@@ -1463,13 +1406,11 @@ function showCard(u) {
       <dt>${t("type")}</dt><dd>${L(type?.label) ?? u.type}</dd>
       <dt>${t("status")}</dt><dd><span class="status-pill"><i class="dot" style="background:${hex(STATUS_COLOR[u.status])}"></i>${t(u.status)}</span></dd>
     </dl>
-    <button class="btn primary" id="stepBtn">${t("walk")}</button>
-    <button class="btn" id="enterBtn" style="border:1px solid var(--panel-border)">${t("roomPhotos")}</button>
+    <button class="btn primary" id="enterBtn">${t("roomPhotos")}</button>
     ${type?.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}
     ${canAsk ? `<a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(t("wa", u.label))}">${t("ask")}</a>` : ""}`;
   ui.card.classList.remove("hidden");
   ui.card.querySelector(".close").onclick = () => selectFloor(u.level); // back to the whole floor
-  ui.card.querySelector("#stepBtn").onclick = () => startWalk(spaces.entranceStart(u)); // start at the room's entrance
   ui.card.querySelector("#enterBtn").onclick = () => openRoomPhotos(u);
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
@@ -1479,20 +1420,8 @@ function hideCard() { ui.card.classList.add("hidden"); }
 ui.overviewBtn.onclick = () => selectFloor(null);
 ui.langBtn.onclick = () => { lang = lang === "en" ? "id" : "en"; try { localStorage.setItem("stin-lang", lang); } catch {} renderUI(); };
 ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); // golden hour was removed: day <-> night
-$("walkBtn").onclick = () => state.floor !== null && startWalk(stairStartAt(state.floor)); // floor view: start at the stairs
 // (the "Map" and "Massing" buttons were removed at the client's request, 2026-11-26: the site plan and the massing are
 // always shown; the Google 3D map code stays in js/map.js, unused while mapWanted stays false)
-$("walkExit").onclick = () => exitWalk();
-// floor menu: go to that floor's corridor (Level 1: the communal area), standing in front of the stairs
-$("walkFloors").onclick = (e) => {
-  if (e.target.dataset.close !== undefined) { closeFloorMenu(); return; }
-  if (!e.target.dataset.l) return;
-  const l = +e.target.dataset.l;
-  closeFloorMenu();
-  if (l !== spaces.state.current?.level || spaces.state.current?.kind === "unit") startWalk(stairStartAt(l));
-};
-$("insideWalk").onclick = () => state.inside && startWalk(spaces.entranceStart(state.inside));
-$("walkRoom").onclick = () => { const s = spaces.state.current; if (s?.kind === "unit") exitWalk(); };
 $("galleryBtn").onclick = () => openGallery("exterior", 0);
 
 // Room card "Room photos": the room type's photo set + that floor's corridor.
@@ -1527,136 +1456,14 @@ function setTime(name) {
   renderUI();
 }
 
-// ---------- walk mode ----------
-// Walking room by room: only the space you are in is drawn (on white, plain light). Rooms are entered and left through
-// their entrance door (click it), the stairs / lift (click) offer the other floors. See spaces.js.
-// in front of the stairs: on solid floor at that level (not over the stairwell) and with the stairs in sight.
-// Where the stairs are walled off (Level 1), stand beside the enclosure and face into the room instead of the wall.
-const stairStartAt = (l) => {
-  const s = stairStartRaw(l);
-  if (!s) return s;
-  const eye = new THREE.Vector3(s.x, levelY[l] + 1.5, s.z), fwd = new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw));
-  const hit = walker.raycastAll(new THREE.Ray(eye, fwd)).find((q) => q.distance > 0.05);
-  if (hit && hit.distance < 1.6) { // nose to a wall (e.g. the stair enclosure): turn to the most open direction
-    // "open" = walkable floor of this space ahead (to the first wall), over a +-15 deg fan: glass doors and windows
-    // let rays through, so a bare ray length would pick a corner by the glazing (round 19)
-    const open = (yaw) => {
-      const d = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const h = walker.raycastAll(new THREE.Ray(eye, d)).find((q) => q.distance > 0.05), lim = Math.min(h ? h.distance : 14, 14);
-      let m = 0;
-      for (let t = 0.3; t < lim; t += 0.3, m += 0.3) if (spaces.spaceAt(s.x + d.x * t, s.z + d.z * t, l) !== s.space) break;
-      return m;
-    };
-    let best = s.yaw, far = -1;
-    for (let a = 0; a < 24; a++) {
-      const yaw = s.yaw + (a / 24) * Math.PI * 2, f = open(yaw - 0.26) + 2 * open(yaw) + open(yaw + 0.26);
-      if (f > far) { far = f; best = yaw; }
-    }
-    s.yaw = best;
-  }
-  return s;
-};
-const stairStartRaw = (l) => spaces.stairStart(l, (x, z, cx, cz, strict) => {
-  for (let a = -1; a < 8; a++) { // the spot and 0.6 m around it (the stairwell opening is bigger than the flights)
-    const px = a < 0 ? x : x + Math.cos((a / 8) * Math.PI * 2) * 0.6, pz = a < 0 ? z : z + Math.sin((a / 8) * Math.PI * 2) * 0.6;
-    const h = walker.floorBelow(new THREE.Vector3(px, levelY[l] + 1, pz));
-    if (!h || Math.abs(h.y - levelY[l]) > 0.35) return false;
-  }
-  const eye = new THREE.Vector3(x, levelY[l] + 1.5, z), to = new THREE.Vector3(cx, levelY[l] + 1.5, cz);
-  const dist = eye.distanceTo(to), hit = walker.raycastAll(new THREE.Ray(eye, to.sub(eye).normalize())).find((q) => q.distance > 0.05);
-  return strict ? !!hit && spaces.isStairs(hit.point) && hit.distance > 1.2 : !hit || spaces.isStairs(hit.point) || hit.distance > dist - 1.2;
-});
 const isVilla = (u) => u.kind === "space" && /villa/i.test(u.space?.gallery ?? "");
-function applyWalkView() {
-  const s = spaces.state.current; if (!s) return;
-  // the stairwell also shows the flight down (to the floor below), not a white hole at the top of the stairs
-  iso.setMask(spaces.maskPolys(), 0.25, levelY[s.level] - FLOOR_DEPTH, spaces.maskSub(), s.kind === "lobby" ? spaces.stairWell() : [], levelY[s.level] - 4.2);
-  invalidate(200);
-}
-spaces.state.onChange = () => { applyWalkView(); updateRail(); };
-walker.setAllow((x, z) => !state.walking || spaces.allowed(x, z));
-// Walking field of view: 70 deg vertical on a landscape screen. On a portrait phone that leaves only ~35 deg across
-// (like looking through a slot), so there it opens up to keep ~50 deg across, at most 90 deg vertical.
-const walkFov = () => camera.aspect >= 1 ? 70 : Math.min(90, Math.max(70, (2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(25)) / camera.aspect) * 180) / Math.PI));
-function startWalk(start) {
-  if (!start) return;
-  if (state.inside) leaveInside();
-  hideCard(); lb.open && closeGallery(); closeFloorMenu();
-  clearRoomView();
-  const lvl = start.space.level;
-  state.walking = true; state.walkLevel = lvl; state.unit = null; state.floor = lvl;
-  spaces.closeAll();
-  spaces.setCurrent(start.space);
-  isoAnim = null; setIsoK(1);
-  // the floor you walk on, up to just under the next one (no section caps: you are inside)
-  setCut(levelY[lvl] + 3.7, false);
-  showBand(levelY[lvl] - 0.5, levelY[lvl] + 4.2);
-  for (const m of unitMeshes) m.visible = false;
-  for (const b of bands) b.visible = false;
-  controls.enabled = false; tween = null;
-  camera.fov = walkFov(); camera.updateProjectionMatrix();
-  const p = new THREE.Vector3(start.x, levelY[lvl] + 1, start.z);
-  // at the stairs: look ~7 deg down, so the first frame shows the flights and the floor rather than the flight overhead
-  walker.start(walker.floorBelow(p) ?? p.setY(levelY[lvl]), start.yaw, start.space.kind === "lobby" ? -0.12 : 0);
-  document.body.classList.add("walking");
-  renderUI();
-  invalidate(300);
-}
-function exitWalk() {
-  if (!state.walking) return;
-  const s = spaces.state.current;
-  walker.stop();
-  state.walking = false;
-  spaces.closeAll(); spaces.setCurrent(null);
-  closeFloorMenu();
-  document.body.classList.remove("walking");
-  camera.fov = 38; camera.updateProjectionMatrix();
-  controls.enabled = true;
-  controls.target.copy(camera.position).add(new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion));
-  camera.up.set(0, 1, 0);
-  // back to where you were: the room you were standing in, or the floor
-  if (s?.kind === "unit") selectUnit(s.unit);
-  else selectFloor(s?.level ?? state.walkLevel ?? 2);
-  renderUI();
-}
-// Floor menu (from the stairs or the lift)
-const floorMenu = $("walkFloors");
-document.body.appendChild(floorMenu); // a centred pop-up (its old place in the walk bar would offset it)
-function openFloorMenu() { floorMenu.classList.add("open"); if (document.pointerLockElement) document.exitPointerLock(); }
-function closeFloorMenu() { floorMenu.classList.remove("open"); }
-// Click (or tap) while walking: an entrance door opens / closes; the stairs or lift open the floor menu.
-const walkRay = new THREE.Raycaster();
-function walkClick(e) {
-  const r = canvas.getBoundingClientRect();
-  if (e) ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); else ndc.set(0, 0);
-  walkRay.setFromCamera(ndc, camera);
-  const doorHit = walkRay.intersectObjects(spaces.doorMeshes(), false).find((h) => h.distance < 3.5);
-  const wallHit = walker.raycastAll(walkRay.ray).find((h) => h.distance > 0.05);
-  if (doorHit && (!wallHit || doorHit.distance <= wallHit.distance + 0.05)) { spaces.click(doorHit.object.userData.door, camera.position); invalidate(800); return true; }
-  if (wallHit && wallHit.distance < 6 && spaces.isStairs(wallHit.point)) { openFloorMenu(); return true; }
-  return false;
-}
-canvas.addEventListener("click", (e) => { if (state.walking && e.pointerType !== "touch") walkClick(document.pointerLockElement === canvas ? null : e); });
-let tapStart = null; // touch: a short tap (not a drag) counts as a click
-canvas.addEventListener("pointerdown", (e) => { if (state.walking && e.pointerType === "touch") tapStart = { x: e.clientX, y: e.clientY, t: performance.now() }; });
-canvas.addEventListener("pointerup", (e) => {
-  if (!state.walking || e.pointerType !== "touch" || !tapStart) return;
-  if (performance.now() - tapStart.t < 300 && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 12) walkClick(e);
-  tapStart = null;
-});
-document.addEventListener("pointerlockchange", () => document.body.classList.toggle("locked", document.pointerLockElement === canvas));
 // ---------- photo rail: the renders that match where you are (bedroom / bathroom / corridor / shared space) ----------
 const rail = { el: $("photoRail"), key: "" };
 function levelAt(y) { let l = 0; for (const [i, z] of Object.entries(levelY)) if (y >= z - 0.6) l = +i; return l; }
 function photoContext() {
   let u = null, zone = "bed", level = null;
   if (state.inside) u = state.inside;
-  else if (state.walking) {
-    const f = walker.feet;
-    u = roomAt(f);
-    if (u?.bath && inPoly(...toPlan(f), u.bath.outline)) zone = "bath";
-    if (!u) level = levelAt(f.y);
-  } else if (state.floor === null && (hero.classList.contains("gone") || heroLeaving)) {
+  else if (state.floor === null && (hero.classList.contains("gone") || heroLeaving)) {
     // building overview: the exterior renders; clicking one flies the 3D view to that angle first
     return { key: "ext", heading: L({ en: "Exterior", id: "Eksterior" }), items: galleryByKey.exterior?.items ?? [], exterior: true };
   } else return null;
@@ -1720,7 +1527,7 @@ function pick(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  if (state.inside || state.walking) return null;
+  if (state.inside) return null;
   // (the raycaster ignores .visible, so hidden room volumes are skipped here; the list is reused between moves)
   pickList.length = 0;
   for (const m of state.floor === null ? bands : unitMeshes) if (m.visible) pickList.push(m);
@@ -1750,17 +1557,18 @@ canvas.addEventListener("pointermove", (e) => {
 canvas.addEventListener("pointerleave", () => { ui.tooltip.classList.add("hidden"); moodFocus = null; });
 // style rooms: hover outline + tooltip with the action ("Open the entry door") over their interactive objects
 canvas.addEventListener("pointermove", (e) => {
-  if (roomView && roomStyle?.active && e.pointerType === "mouse" && !state.walking && !state.inside) roomStyle.hover(e, clipPlane.constant);
+  if (roomView && roomStyle?.active && e.pointerType === "mouse" && !state.inside) roomStyle.hover(e, clipPlane.constant);
 });
 // Room lights switch on around the point under the mouse (desktop). Ignores anything above the floor cut.
 let moodFocus = null, lastMove = null;
 canvas.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") lastMove = e; });
 function updateMoodFocus() {
-  if (!lastMove || state.walking || state.inside) return;
+  if (!lastMove || state.inside) return;
   const r = canvas.getBoundingClientRect();
   ndc.set(((lastMove.clientX - r.left) / r.width) * 2 - 1, -((lastMove.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  const hit = walker.raycastAll(ray.ray).find((h) => h.point.y <= clipPlane.constant + 0.01);
+  // (the room boxes under the cursor: cheap enough for every mouse move without a collision tree)
+  const hit = ray.intersectObjects(unitMeshes, false).find((h) => h.point.y <= clipPlane.constant + 0.01);
   moodFocus = hit ? hit.point : null;
   lastMove = null;
 }
@@ -1821,7 +1629,6 @@ function openPano(u) {
     ? `${L(u.space.label)} · ${L(CONFIG.floors.find((f) => f.level === u.level)?.label) ?? ""}`
     : `${u.label} · ${L(type?.label) ?? ""}`;
   document.getElementById("panoClose").textContent = t("close");
-  document.getElementById("panoWalk").textContent = t("walkHere");
   pano.unit = u;
   const note = document.getElementById("panoNote");
   note.textContent = "";
@@ -1847,19 +1654,9 @@ function openPano(u) {
   resize();
 }
 document.getElementById("panoClose").onclick = () => { pano.open = false; pano.el.classList.add("hidden"); invalidate(300); };
-// From the 360° view straight into walk mode in that same room: standing in the middle of the room, facing the
-// window (Space key, or the "Walk around" button for touch screens).
-function panoToWalk() {
-  const u = pano.unit;
-  document.getElementById("panoClose").click();
-  if (!u) return;
-  startWalk(u.kind === "space" ? stairStartAt(u.level) : spaces.entranceStart(u)); // a room: start at its entrance
-}
-document.getElementById("panoWalk").onclick = panoToWalk;
 addEventListener("keydown", (e) => {
   if (!pano.open) return;
   if (e.key === "Escape") document.getElementById("panoClose").click();
-  else if (e.code === "Space" && !e.repeat) { e.preventDefault(); e.stopPropagation(); panoToWalk(); }
 }, true);
 pano.canvas.addEventListener("pointerdown", (e) => { pano.drag = [e.clientX, e.clientY, pano.lon, pano.lat]; pano.canvas.setPointerCapture(e.pointerId); });
 pano.canvas.addEventListener("pointermove", (e) => {
@@ -1894,7 +1691,6 @@ function resize() {
   invalidate(300);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  if (state.walking) camera.fov = walkFov(); // (a phone turned while walking)
   camera.updateProjectionMatrix();
   pano.renderer?.setSize(w, h, false);
   pano.camera.aspect = w / h;
@@ -1931,19 +1727,7 @@ function frame(now) {
     pano.renderer.render(pano.scene, pano.camera);
     return;
   }
-  if (state.walking) {
-    walker.step(dt);
-    // doors: walking through an entrance switches the space; bathroom / balcony doors open as you come close
-    if (spaces.update(walker.feet, dt, camera.position)) invalidate(80);
-    if ((roomCheck += dt) > 0.3) { // "You're in K.305" chip
-      roomCheck = 0;
-      const s = spaces.state.current, u = s?.kind === "unit" ? s.unit : null, chip = $("walkRoom");
-      chip._unit = u;
-      chip.style.display = u ? "" : "none";
-      if (u) chip.textContent = `${u.label} · ${t(u.status)} ›`;
-      updateRail();
-    }
-  } else {
+  {
     if (tween) {
       const k = Math.min(1, (now - tween.s) / tween.d), e = ease(k);
       camera.position.lerpVectors(tween.p0, tween.p1, e);
@@ -1975,12 +1759,12 @@ function frame(now) {
   if (withAO) aoPending = false;
 
   // trees in front of the building step aside (not while walking, where they're part of the scenery)
-  landscape.updateOcclusion(camera, buildingBox, !state.walking && !state.inside);
+  landscape.updateOcclusion(camera, buildingBox, !state.inside);
   if (massing?.updateOcclusion(camera, buildingBox)) refreshShadows(); // pad-1 box hidden / shown: its shadow too
   // site in floor views (client, 2026-11-26: "when selecting level 1, show the ground and roads"): the Level 1 view
   // keeps the site plan; other floor / room / walk views drop it once the outside has mostly faded. The massing boxes
   // go in every floor view (the plan cut would slice them open).
-  const siteOn = !map.on && (isoK < 0.5 || (state.floor === 1 && !state.walking));
+  const siteOn = !map.on && (isoK < 0.5 || (state.floor === 1));
   if (ground.visible !== siteOn) { ground.visible = siteOn; invalidate(100); }
   // the floor views have plain, sunless light on white, in which the site's render colours (olive lawn, dark asphalt)
   // read as a dark slab: blend them to the light site-plan palette, in step with the fade
@@ -1994,11 +1778,11 @@ function frame(now) {
   }
   if (massing && massing.group.visible !== (isoK < 0.5)) { massing.group.visible = isoK < 0.5; invalidate(100); }
   landscape.tick(now / 1000);
-  roomGlow.visible = !state.walking && !state.inside && state.floor === null;
+  roomGlow.visible = !state.inside && state.floor === null;
   // mood lights: around you when walking/inside; around the mouse cursor (desktop) or screen centre otherwise
   updateMoodFocus();
-  mood.update(state.walking || state.inside ? camera.position : moodFocus ?? controls.target);
-  const aoMode = state.walking || state.inside ? "in" : "out";
+  mood.update(state.inside ? camera.position : moodFocus ?? controls.target);
+  const aoMode = state.inside ? "in" : "out";
   env.setInside(aoMode === "in");
   if (composer) {
     gtao.enabled = withAO;
@@ -2019,9 +1803,9 @@ function frame(now) {
     u.labelEl.style.left = ((v.x + 1) / 2) * innerWidth + "px";
     u.labelEl.style.top = ((1 - v.y) / 2) * innerHeight + "px";
   }
-  massing?.updateLabels(camera, state.floor === null && !lb.open && !state.walking && !state.inside);
+  massing?.updateLabels(camera, state.floor === null && !lb.open && !state.inside);
   if (!pins.length) return;
-  const showPins = state.floor === null && !lb.open && !state.walking;
+  const showPins = state.floor === null && !lb.open;
   const camDir = v2.copy(camera.position).setY(0).normalize();
   for (const p of pins) {
     p.el.style.opacity = p.dir.dot(camDir) < -0.25 ? 0.3 : 1; // fade pins on the far side of the building
@@ -2172,8 +1956,8 @@ renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
-window.STIN = { THREE, post, tier, look, scene, camera, renderer, walker, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
-  iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
+window.STIN = { THREE, post, tier, look, scene, camera, renderer, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
+  iso, spaces, units, levelY, selectFloor, selectUnit, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console
 ready = true;

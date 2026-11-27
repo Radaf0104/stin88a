@@ -163,36 +163,13 @@ body.inside .floors, body.inside .card, body.inside .brand { display: none; }
   .photo-rail.exterior { left: 12px; right: 12px; width: auto; bottom: 84px; } /* above the floor bar */
   /* phones: while a photo is open, hide the panels behind it (the 3D view itself stays visible) */
   #lbTabs { top: 108px; }
-  body.lb-open .toolbar, body.lb-open .photo-rail, body.lb-open .floors, body.lb-open .brand, body.lb-open .walk-hud, body.lb-open #insideBar { display: none !important; }
+  body.lb-open .toolbar, body.lb-open .photo-rail, body.lb-open .floors, body.lb-open .brand, body.lb-open #insideBar { display: none !important; }
   .rail-title { display: none; }
   .photo-rail figure { margin: 0; flex: none; }
   .photo-rail img { height: 72px; width: auto; }
-  body.walking .walk-hint { display: none; }
 }
 
-/* walk mode */
-.walk-hud { display: none; }
-body.walking .walk-hud { display: block; }
-body.walking .floors, body.walking .card, body.walking #labels, body.walking > #app > .hint:not(.walk-hint), body.walking #insideBar { display: none !important; }
-.walk-top { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
-/* floor menu: opens when the stairs or the lift are clicked */
-#walkFloors { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30; flex-direction: column;
-  gap: 8px; padding: 16px; min-width: 200px; background: var(--panel, rgba(255,255,255,0.96)); border: 1px solid var(--panel-border, #ddd);
-  border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.18); }
-#walkFloors.open { display: flex; }
-#walkFloors .menu-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-#walkFloors .chip { justify-content: center; }
 .chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-.walk-room { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); }
-.walk-hint { bottom: 70px; }
-/* aiming dot while the mouse is captured (the walk view is on white, so it is dark) */
-.crosshair { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: rgba(30,30,30,0.75); box-shadow: 0 0 0 1.5px rgba(255,255,255,0.9); pointer-events: none; display: none; }
-body.walking.locked .crosshair { display: block; }
-@media (max-width: 720px) {
-  .walk-top { top: 92px; left: 12px; right: 12px; transform: none; }
-  .walk-room { top: 136px; }
-  body.walking .brand { display: none; }
-}
 
 /* Google map credit (required while the map is shown) */
 .map-credit { position: absolute; left: 8px; bottom: 6px; font-size: 10px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.8); pointer-events: none; max-width: 60vw; }
