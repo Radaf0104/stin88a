@@ -582,3 +582,12 @@ Both renderers (plain three.js): the classic site gets them too.
   1. The new renderer has a ~3.4 s long task right after start-up even with `?trees=0`. My M2b/M4 checks timed frame and idle callbacks only and missed it; the likely cause is the photo-texture swap (mipmaps built with render passes). This blocks making the new renderer the default.
   2. On the classic renderer the golden-hour switch changes the tone curve (Neutral → AgX), which recompiles every shader (multi-second task in a scripted run). It is existing behaviour on the live site.
 - **Not done in M5**: distant terrain / skyline ring and height fog (the 9.webp haze), and wind (the site renders on demand, so static trees cost nothing while idle).
+
+## Published: M2–M5 live as 7e4e0d3 (2026-11-27), user-approved ("Publish")
+- **What changes on the live (classic) site**: M5's trees (291, CC0-textured, instanced) and the photographed lawn; M4's anti-aliased batten shading only applies on the new renderer. The WebGPU work (M2–M4) is behind `?renderer=webgpu` / `?renderer=webgl2`, and `?quality=`, `?look=1` are opt-in. The default site still runs three r170 WebGLRenderer.
+- **Pre-publish check** (local, committed build):
+  - Every mode passed with no console errors and no failed requests: floor 2, unit K.405, floor 4 walk in and out, night / day, phone layout (half-size textures).
+  - Fresh-load A/B against live M1 (`9a151f2`), same cameras, 1600×900 at 1.25×, GPU-synced: hero 12.7 vs 13.1 ms, overview 10.0 vs 9.8 ms (equal within noise), 338 vs 331 draw calls.
+- **Push**: rollback tag `v6-live-9a151f2` pushed first (`v5-live-cebeb71` and `v5-live-94e0ddf` unchanged), then `v6-webgpu` → `origin/main` as a fast-forward (`9a151f2..7e4e0d3`, 6 commits, no force). Pages served it after ~40 s.
+- **Live check**: 291 trees, ready 2.2 s, every request OK, no console errors. Returning visitors may see old files for up to 10 minutes (max-age 600).
+- Push notification sent.
