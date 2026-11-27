@@ -32,7 +32,11 @@ function toktx(src, dst, { normal = false, srgb = true, uastc = false, half = fa
   else args.push("--encode", "etc1s", "--clevel", "4", "--qlevel", "160");
   // normal maps: 512 px + rate-distortion optimisation (surface relief at room scale does not need 1k; it was ~10 MB)
   // (no --normal_mode: that stores X/Y in red/alpha, which three.js does not read as a normal map)
-  if (mobile) args.push("--resize", normal || half ? "256x256" : "512x512", ...(normal ? ["--uastc_rdo_l", "3"] : []));   // phone set (round 13): half size
+  // (round 24) normal maps of small surfaces / small items at 256 px: site paving (622 triangles), marble (24), the potted
+  // plant and the chair legs were 68-259 KB each at 512 px
+  const smallNormal = normal && /site_paving|stone_marble|potted_plant|arm_chair_01_legs/.test(basename(dst));
+  if (smallNormal) args.push("--resize", "256x256", "--uastc_rdo_l", "3");
+  else if (mobile) args.push("--resize", normal || half ? "256x256" : "512x512", ...(normal ? ["--uastc_rdo_l", "3"] : []));   // phone set (round 13): half size
   else if (normal) args.push("--resize", "512x512", "--uastc_rdo_l", "3");   // (round 9: RDO 1.5 -> 3, normal maps ~14 % smaller)
   else if (half) args.push("--resize", "512x512");   // roughness maps and small-item colour maps
   // (retried: on Windows the output file is sometimes still locked for a moment - "could not open output file")

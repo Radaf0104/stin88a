@@ -426,8 +426,10 @@ if (USE_GLB) {
       if (ud.kind === "ceiling") ceilingObjs.push(o);
       if (ud.kind === "tv") tvObjs.push(o);
       if (["shell", "ceiling", "stair", "railing", "doorframe"].includes(ud.kind)) { o.userData.overviewVerts = Infinity; buildingMeshes.push(o); }
-      // walk-mode collision: root-local, non-indexed triangles (as the Revit path builds them)
-      if (ud.collide) {
+      // walk-mode collision: root-local, non-indexed triangles (as the Revit path builds them). (round 24) Not the
+      // ceilings (above the walker's head) nor the facade battens (outside every walkable area): 338k -> ~261k
+      // triangles, so the collision tree - built before the first frame - is quicker to make
+      if (ud.collide && ud.kind !== "ceiling" && !/^M_teak_batten/.test(o.material?.name ?? "")) {
         const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
         const p = g.attributes.position;
         const im = new THREE.Matrix4(), n = o.isInstancedMesh ? o.count : 1; // instanced: every copy collides
@@ -623,6 +625,7 @@ const siteFloor = new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2).transl
 collideChunks.push(...[siteFloor.attributes.position.array].map((a) => a.map((v, i) => (i % 3 === 0 ? v + c.x : i % 3 === 2 ? v + c.z : v))));
 const collideGeo = geoFrom(collideChunks);
 collideGeo.translate(-c.x, 0, -c.z);
+mark("collisionMerge");
 const walker = createWalker({ camera, dom: canvas, geometry: collideGeo, onExit: () => exitWalk() });
 mark("collision");
 
