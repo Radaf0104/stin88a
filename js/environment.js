@@ -17,7 +17,9 @@ export const TIMES = {
   // fill = sky-blue from above + green bounce from the lawn; roomGlow = warm lit ceilings seen through the windows.
   // neutral: use the "PBR Neutral" tone curve, which keeps whites white and the sky blue (AgX greys them out in sun)
   // (1k versions of the 2k Poly Haven photos, made with tools/shrink-hdr.mjs: a quarter of the download, same look)
-  day:    { hdri: "assets/sky/autumn_field_puresky_512.hdr", neutral: true, sunAz: -38, sunElev: 48, sun: 0xffefdc, sunI: 7.8, env: 0.2, bg: 0.98, exposure: 1.0, skyDesat: 0.04, skyHaze: 0.15, fill: [0xe2ebf4, 0x7a7d4a, 0.28],
+  // (M1, 2026-11-27) envGround: ground under the sky photo for the ambient light (no navy soffits); env 0.2 -> 0.35;
+  // sun 48 -> 32 deg high (3.jpg: a low morning sun that makes the window boxes and fins cast long shadows)
+  day:    { hdri: "assets/sky/autumn_field_puresky_512.hdr", neutral: true, sunAz: -38, sunElev: 32, sun: 0xffeedd, sunI: 6.0, env: 0.35, bg: 0.98, envGround: [1.0, 0.97, 0.84, 0.42], exposure: 1.0, skyDesat: 0.04, skyHaze: 0.15, fill: [0xe2ebf4, 0x7a7d4a, 0.28],
             // (rounds 5 + 10 of IMPROVEMENT_LOG.md: exposure 1.8 -> 1.0 with a stronger sun - the high exposure lifted the blacks
             // and pushed the plaster into the highlight shoulder: milky; measured against the hero render from its camera)
             // (2026-11-26 reference render "3.jpg": sky #C0D3E3 -> #D5DDE3 at the horizon, a touch warmer sun, olive lawn bounce)
@@ -27,7 +29,9 @@ export const TIMES = {
             // indoors: neutral studio-room light + cool daylight through the window, lamps dimmed (they're "on" but daylight wins)
             roomEnv: 0.3, window: [0xeef3ff, 4],
             // colours matched by measurement to the client's elevation render: cream plaster, light honey timber, olive lawn
-            grade: { gain: 0.955, contrast: 1.16, saturation: 1.04, lift: 0, gamma: 1.08, warm: [1.05, 0.965, 0.955], cool: [1.0, 0.955, 1.0], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0015 /* the masterplan site reaches ~150 m: light haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
+            // (M1) the old split tone (warm 1.05/.965/.955, cool 1/.955/1) took green out of both ends, which turned every
+            // shaded plaster wall pink-mauve; now warm = slightly yellow-orange, cool = slightly blue (3.jpg's grey shade)
+            grade: { gain: 0.955, contrast: 1.16, saturation: 1.04, lift: 0, gamma: 1.08, warm: [1.02, 1.0, 0.975], cool: [0.975, 0.985, 1.02], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0015 /* the masterplan site reaches ~150 m: light haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
   golden: { hdri: "assets/sky/kloppenheim_06_puresky_1k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
             fill: [0xfff4e6, 0x9a8a72, 0.09], roomEnv: 0.22, window: [0xffcf9a, 2.5], skyDesat: 0.2, skyHaze: 0.5, roomGlow: 0.9, lamps: 0.9, glow: 0.4,
             grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },
@@ -66,7 +70,7 @@ export function createEnvironment(renderer, scene) {
     loader.load(t.hdri, (tex) => {
       tex.mapping = THREE.EquirectangularReflectionMapping;
       const a = analyse(tex);
-      hdris[name] = { tex, ...a, ...paleSky(tex, t, a) };
+      hdris[name] = { tex, ...a, ...paleSky(tex, t, a), envTex: groundedEnv(tex, t) };
       if (current === name) onReady?.(name);
     });
   }
@@ -93,7 +97,7 @@ export function createEnvironment(renderer, scene) {
       scene.background = h.bgTex ?? h.tex;
       scene.backgroundRotation.set(0, rot, 0);
       scene.environmentRotation.set(0, rot, 0);
-      envRT = pmrem.fromEquirectangular(h.tex);
+      envRT = pmrem.fromEquirectangular(h.envTex ?? h.tex);
       scene.environment = envRT.texture;
       const elev = t.sunElev != null ? THREE.MathUtils.degToRad(t.sunElev) : Math.max(h.elev, THREE.MathUtils.degToRad(6));
       sunDir.setFromSphericalCoords(1, Math.PI / 2 - elev, THREE.MathUtils.degToRad(t.sunAz));
@@ -221,6 +225,40 @@ function paleSky(tex, t, a) {
   // fog: the haze colour, scaled into display range (fog is mixed after lighting)
   const fogCol = new THREE.Color(0.86, 0.89, 0.92).lerp(a.horizon, 0.25);
   return { bgTex: bg, hazeFog: fogCol };
+}
+
+// (M1) The "pure sky" photos are sky all the way round, so their lower half lit soffits, canopy undersides and balcony
+// ceilings with blue sky from below (they read navy). A real site has ground there. This copy is used only for the
+// reflection/ambient light (the visible sky is unchanged): the lower half becomes a ground colour as bright as the
+// horizon x t.envGround[3], tinted t.envGround[0..2] (lawn + paving bounce), with a soft blend over +-6 deg.
+function groundedEnv(tex, t) {
+  const g = t.envGround;
+  if (!g) return null;
+  const { data, width: w, height: h } = tex.image;
+  const half = data instanceof Uint16Array;
+  const ch = data.length / (w * h);
+  const get = (i) => (half ? THREE.DataUtils.fromHalfFloat(data[i]) : data[i]);
+  const put = half ? (o, i, v) => (o[i] = THREE.DataUtils.toHalfFloat(Math.min(v, 30000))) : (o, i, v) => (o[i] = v);
+  let hl = 0, n = 0; const yh = Math.floor(h * 0.48);
+  for (let x = 0; x < w; x += 4) { const i = (yh * w + x) * ch; hl += get(i) * 0.2126 + get(i + 1) * 0.7152 + get(i + 2) * 0.0722; n++; }
+  hl = (hl / n) * g[3];
+  const out = data.slice();
+  const blend = (6 * Math.PI) / 180;
+  for (let y = 0; y < h; y++) {
+    const lat = (0.5 - (y + 0.5) / h) * Math.PI; // rows run from the top of the sky to the ground
+    if (lat > blend) continue;
+    const k = Math.min(1, (blend - lat) / (2 * blend)); // 0 at +6 deg, 1 at -6 deg
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * ch;
+      for (let c = 0; c < 3; c++) put(out, i + c, get(i + c) * (1 - k) + hl * g[c] * k);
+    }
+  }
+  const e = new THREE.DataTexture(out, w, h, tex.format, tex.type);
+  e.mapping = THREE.EquirectangularReflectionMapping;
+  e.colorSpace = tex.colorSpace; e.flipY = tex.flipY;
+  e.minFilter = e.magFilter = THREE.LinearFilter; e.generateMipmaps = false;
+  e.needsUpdate = true;
+  return e;
 }
 
 function nightTexture() {

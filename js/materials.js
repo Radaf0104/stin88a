@@ -156,7 +156,7 @@ export function presetFor(name, info = {}) {
   if (/light source/.test(n)) return { kind: "emissive", color: 0xffe2b8 };
   if (/chrome|polished/.test(n)) return { kind: "metal", color: 0xe8e8e8, rough: 0.12 };
   if (/brushed|stainless|alumin|alumun/.test(n)) return { kind: "metal", color: 0xc9c9c6, rough: 0.32, tex: "brushed" };
-  if (/paint finish|steel black|gate_steel|black paint|metal - paint|railing|painted/.test(n)) return { kind: "paint", color: n.includes("grey") && !n.includes("dark") ? 0x8a8a87 : 0x2e2f31, rough: 0.55, metal: 0.35 };
+  if (/paint finish|steel black|gate_steel|black paint|metal - paint|railing|painted/.test(n)) return { kind: "paint", color: n.includes("grey") && !n.includes("dark") ? 0x8a8a87 : 0x2e2f31, rough: 0.45, metal: 0 }; // (M1) paint / powder coat is a dielectric: metal 0.35 mirrored the sky (navy frames)
   if (cls === "metal" || /metal|steel/.test(n)) return { kind: "metal", color: 0xa8a8a6, rough: 0.4 };
   if (/porcelain|ceramic|marble/.test(n) || (/white/.test(n) && /plumb/.test(info.cats || ""))) return { kind: "porcelain", color: n.includes("marble") ? 0x9c9a96 : 0xf6f5f1 };
   if (/deck/.test(n)) return { kind: "wood", tex: "deck", color: rgb(info) };

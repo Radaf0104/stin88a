@@ -15,7 +15,8 @@ export async function createMassing({ parent, url = "data/massing.json", labels 
   try { data = await fetch(url).then((r) => (r.ok ? r.json() : null)); } catch { data = null; }
   if (!data?.items?.length) return { group, items, setVisible() {}, updateLabels() {}, setLang() {}, updateOcclusion() { return false; } };
 
-  const wall = new THREE.MeshStandardMaterial({ color: 0xf7f5f1, roughness: 0.92, metalness: 0 });
+  // (M1) was 0xf7f5f1: brighter than the building's own plaster, the study blocks glowed white behind the hero view
+  const wall = new THREE.MeshStandardMaterial({ color: 0xcdcac4, roughness: 0.92, metalness: 0 });
   const line = new THREE.LineBasicMaterial({ color: 0xb9b4ac, transparent: true, opacity: 0.55 });
   const toThree = new THREE.Matrix4().makeRotationX(-Math.PI / 2); // Revit (x, y, z up) -> three (x, z, -y)
   for (const it of data.items) {

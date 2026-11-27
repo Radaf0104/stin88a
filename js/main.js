@@ -107,7 +107,25 @@ let composer = null, gtao = null, bloomPass = null, scenePass = null;
 const grade = createGrade();
 const sky = createSky(renderer);
 scene.add(sky.mesh);
+// (M1) Architectural "shift lens": near eye level the picture is shifted up instead of tilting the camera, so the
+// building's verticals stay vertical, like the renders (3.jpg). The shift fades out as the camera rises above ~14 deg,
+// and is off while walking or inside a room. Only the projection changes (no extra cost); picking stays consistent
+// because the inverse matrix is updated too.
+const LENS_SHIFT = 0.62, LENS_FADE = THREE.MathUtils.degToRad(14);
+const lensV = new THREE.Vector3();
+function applyLens() {
+  camera.updateProjectionMatrix(); // resets any previous shift
+  let inRoom = false; try { inRoom = !!roomView; } catch {} // (declared further down; a shadow refresh can render first)
+  if (state.walking || inRoom) return;
+  lensV.subVectors(camera.position, controls.target);
+  const elev = Math.asin(THREE.MathUtils.clamp(lensV.y / (lensV.length() || 1), -1, 1));
+  const s = LENS_SHIFT * THREE.MathUtils.clamp(1 - elev / LENS_FADE, 0, 1);
+  if (s <= 0) return;
+  camera.projectionMatrix.elements[9] += s; // off-axis frustum: the view window moves up by s/2 of the screen height
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+}
 function renderScene() { // draw one frame to the screen
+  applyLens();
   sky.update(scene);
   renderer.render(scene, camera);
   sky.restore(scene);
@@ -322,9 +340,19 @@ const doorLeaves = [], ceilingObjs = [], tvObjs = [], glbLightmapped = [];
 // per-material colour factors (linear) from the round 17 swatch match; sRGB ratios r/g/b converted with ^2.2
 const lin = (r, g, b) => [r, g, b].map((v) => Math.pow(v, 2.2));
 const FACADE_TINT = {
-  M_teak_timber: lin(0.96, 1.16, 1.41), M_teak_batten: lin(0.96, 1.16, 1.41), M_teak_deck: lin(1.05, 1.1, 1.12),
-  M_plaster_cream: lin(0.95, 0.94, 0.985), // (stronger factors barely move sunlit plaster - tone shoulder + highlight lift - and only darken the shade)
+  // (M1) teak was lin(0.96, 1.16, 1.41): matched under the old mauve grade, it read grey-beige once that was fixed
+  M_teak_timber: lin(0.97, 1.04, 1.13), M_teak_batten: lin(0.97, 1.04, 1.13), M_teak_deck: lin(1.05, 1.1, 1.12),
+  // (M1) was lin(0.95, 0.94, 0.985): its lilac cast (blue up, green down) helped turn the shaded walls mauve
+  M_plaster_cream: lin(0.95, 0.95, 0.945), // (stronger factors barely move sunlit plaster - tone shoulder + highlight lift - and only darken the shade)
 };
+// (M1) physically plausible values: painted / powder-coated frames, railings and fascias are dielectrics (metalness 0;
+// 0.35 mirrored the sky and read navy), brass is a metal. Applied once per shared material.
+const PBR_FIX = {
+  M_metal_grey: { metalness: 0, roughness: 0.45 }, M_metal_dark: { metalness: 0, roughness: 0.42 },
+  M_brass: { metalness: 1, roughness: 0.32 },
+};
+// (M1) every glTF map was sampled with anisotropy 1, so facades and paving blurred at grazing angles
+const TEX_ANISO = phone ? 4 : 8;
 // (round 19) texture density: the teak deck (balconies, and the corridor / communal floors) tiled every ~1.3 m, so its
 // knots read ~25 cm wide at eye level. x2.5 = real-sized grain. Same images (shared source), only the UV scale.
 const TEX_DENSITY = { M_teak_deck: 2.5 };
@@ -406,6 +434,9 @@ if (USE_GLB) {
           // orange (#a6724c vs #a0846b), the sunlit plaster a touch bright / yellow (#f4e9d2 vs #e7dbcf). Factor = render / ours.
           const tint = FACADE_TINT[name];
           if (tint && o.material.color) o.material.color.multiply(new THREE.Color().setRGB(...tint, THREE.LinearSRGBColorSpace));
+          if (PBR_FIX[name]) Object.assign(o.material, PBR_FIX[name]);
+          for (const slot of ["map", "normalMap", "roughnessMap", "metalnessMap", "bumpMap", "aoMap"])
+            if (o.material[slot]) o.material[slot].anisotropy = TEX_ANISO;
           const k = TEX_DENSITY[name];
           if (k) for (const slot of ["map", "normalMap", "roughnessMap", "metalnessMap", "bumpMap"]) {
             const t = o.material[slot]; if (!t) continue;
@@ -572,6 +603,8 @@ const sitePlanReady = Promise.all([import("three/addons/loaders/GLTFLoader.js"),
         const t = tileRepeat(st[0], st[1]); t.repeat.set(512 / st[1], 512 / st[1]); t.offset.set(-256 / st[1], -256 / st[1]);
         o.material.map = t; o.material.needsUpdate = true;
       }
+      // (M1) with the shade no longer tinted, the lawn read dark olive next to 3.jpg's (#6e7338 average): x1.3
+      if (o.isMesh && o.material?.name === "SITE_grass" && !o.material.userData.m1Lift) { o.material.color.multiplyScalar(1.3); o.material.userData.m1Lift = true; }
     });
     g.scene.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; if (!sitePlanMats.includes(o.material)) sitePlanMats.push(o.material); } });
     ground.add(g.scene);
@@ -859,7 +892,13 @@ function flyToRender(i, thenShow = false) {
   ui.tooltip.classList.add("hidden");
   if (thenShow) setTimeout(() => openGallery("exterior", i), 1400);
 }
-function introFly() { flyTo(overviewView.pos, overviewView.target, 2.2); }
+// (M1) The first view is the eye-level hero of 3.jpg: standing on the lawn in front of the terrace facade (+z), at
+// eye height, looking level (the shift lens frames the whole building). The aerial overview stays for floor exits.
+const heroView = {
+  pos: new THREE.Vector3(-2, 1.7, buildingBox.max.z + 31),
+  target: new THREE.Vector3(-1, 1.2, 0),
+};
+function introFly() { flyTo(heroView.pos, heroView.target, 2.2); }
 
 // ---------- camera tween ----------
 let tween = null;

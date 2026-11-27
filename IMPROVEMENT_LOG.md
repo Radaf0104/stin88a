@@ -408,3 +408,16 @@ All measured on the current build; each item tried or checked and left out with 
 - Live, first visit (browser cache refreshed): 115 → 104 files, 12.98 → 11.0 MB compressed (24.1 → 19.8 MB decoded), ready 5.0 → 1.9 s in the built-in browser. Hero 65/145/232, RGB 130/136/130. The CC0 set (8 files, 576 KB) loads on opening K.405. No console errors.
 - Note: returning visitors may run a mix of old and new files for up to 10 minutes (GitHub Pages caches for max-age 600).
 - Push notification sent: "STIN 88A site updated live".
+
+## M1 (v6-webgpu branch) — look fixes on the current renderer (user: "Yes, start M1")
+First milestone of the WebGPU/TSL plan (AUDIT_WEBGPU_TSL.md §6.5). Backup tag `pre-webgpu-cebeb71`; branch `v6-webgpu`. Still WebGLRenderer r170: no renderer change yet.
+- **First view = eye-level hero** (3.jpg): the intro now flies to a camera on the lawn in front of the terrace facade (~3.8 m up, the orbit limit) instead of the high aerial view. The aerial overview is still used when leaving a floor.
+- **Shift lens**: near eye level the projection is shifted up (off-axis frustum) instead of tilting the camera, so verticals stay vertical like the render. It fades out above ~14° camera elevation and is off while walking or in a room. It costs nothing per frame; picking uses the same matrix.
+- **Pink/mauve shade fixed**: cause found by sampling pixels. The day grade's split tone (warm 1.05/.965/.955, cool 1/.955/1) removed green from both ends, so every shaded plaster wall went mauve. Now warm 1.02/1.0/.975 and cool .975/.985/1.02. Plaster tint lin(.95,.94,.985) (lilac) → lin(.95,.95,.945).
+- **Navy soffits fixed**: the "pure sky" HDRI lit undersides with blue sky from below. environment.js `groundedEnv` builds a copy for the ambient/reflection light only, with a ground colour below the horizon (horizon × 0.42, tint 1/.97/.84; visible sky unchanged). Day environment 0.2 → 0.35.
+- **Sun**: elevation 48° → 32°, colour #ffefdc → #ffeedd, intensity 7.8 → 6.0 (a lower morning sun, so fins and window boxes cast longer shadows).
+- **Materials**: anisotropy 8 (phone 4) on every glTF map (was 1, so grazing facades were blurred). Painted/powder-coated metal metalness 0.35 → 0 (frames, railings, fascias: they mirrored the sky). Brass metalness 0 → 1. Teak tint lin(.96,1.16,1.41) → lin(.97,1.04,1.13): warm teak instead of grey-beige. Lawn ×1.3. Massing blocks #f7f5f1 → #cdcac4.
+- **Measured** (same GPU, 1600×893 at 1.25×, GPU-synced): hero camera 10.2 ms median against 10.2 ms on live cebeb71; overview 7.9 against 8.9 ms. 331 draw calls and 563k triangles, unchanged.
+- **Colour, hero camera**: p5/p50/p95 49/127/240 (live 34/81/210 from the same camera), mean RGB 124/133/127. Side by side with 3.jpg: tools/out/m1_compare.jpg.
+- **Checks**: floor 2, unit K.405, back to the overview, golden, night: no console errors. Walk mode didn't start from the scripted check, so it is untested by script (its code path is unchanged; the lens is off while walking).
+- Not published.
