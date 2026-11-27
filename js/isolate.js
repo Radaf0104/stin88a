@@ -5,6 +5,7 @@
 // The mask only changes a texture and a few numbers, never the shaders, so switching views is instant (no shader
 // rebuild, no freeze).
 import * as THREE from "three";
+import { GPU, TSL } from "./gpu.js";
 
 export function createIsolation() {
   const canvas = document.createElement("canvas");
@@ -27,6 +28,25 @@ export function createIsolation() {
     uIsoDeepY: { value: -1e6 },                          // "deep" areas (green in the mask, e.g. the stairwell) go down to here
   };
   let rect = { x0: 0, z0: 0, w: 1, d: 1 };
+  // (M2) new renderer: the same numbers as TSL uniform nodes (with .value, so the code below is unchanged) and the
+  // test as one shared mask node (a fragment is kept where it is true). Same logic as the GLSL in patch().
+  let maskNode = null;
+  if (GPU) {
+    const { uniform, texture, positionWorld, screenCoordinate, fract, dot, vec2, float, select, and, or } = TSL;
+    for (const k in U) U[k] = k === "uIsoMask" ? U[k] : uniform(U[k].value);
+    const w = positionWorld, a = U.uIsoCutA, b = U.uIsoCutB;
+    const inA = w.x.greaterThan(a.x).and(w.x.lessThan(a.z)).and(w.z.greaterThan(a.y)).and(w.z.lessThan(a.w));
+    const inB = w.x.greaterThan(b.x).and(w.x.lessThan(b.z)).and(w.z.greaterThan(b.y)).and(w.z.lessThan(b.w));
+    const cut = w.y.greaterThan(U.uIsoCutY).and(inA.or(inB));
+    const isoUv = w.xz.sub(U.uIsoRect.xy).div(U.uIsoRect.zw);
+    const inside = isoUv.x.greaterThanEqual(0).and(isoUv.x.lessThanEqual(1)).and(isoUv.y.greaterThanEqual(0)).and(isoUv.y.lessThanEqual(1));
+    const m = select(inside, texture(tex, isoUv).rg, vec2(0));
+    const deepOk = m.y.greaterThan(0.5).and(w.y.greaterThan(U.uIsoDeepY));
+    const isoIn = select(w.y.lessThan(U.uIsoMinY), select(deepOk, float(1), float(0)), m.x);
+    const d = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715)))));
+    const dissolved = U.uIsoFade.greaterThan(0).and(isoIn.lessThan(0.5)).and(d.lessThan(U.uIsoFade));
+    maskNode = cut.or(dissolved).not();
+  }
 
   // The mask covers a fixed area of the world (the building plus a margin), set once.
   function setBounds(box3, margin = 4) {
@@ -61,6 +81,9 @@ export function createIsolation() {
   function patch(m) {
     if (!m || m.userData.isoPatched || !(m.isMeshStandardMaterial || m.isMeshBasicMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
     m.userData.isoPatched = true;
+    // (M2) the node version (see above). The shadow pass keeps everything, as on the classic renderer (its shadow
+    // depth material never had the mask): cut-away walls still cast their shadows.
+    if (GPU) { m.maskNode = maskNode; m.maskShadowNode = TSL.bool(true); m.needsUpdate = true; return; }
     const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey?.bind(m);
     m.onBeforeCompile = (sh, r) => {
       prev?.call(m, sh, r);

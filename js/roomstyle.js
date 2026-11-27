@@ -92,7 +92,7 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
   function loadCC0() {
     if (cc0 || !loadTexture) return;
     cc0 = {};
-    const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    const aniso = Math.min(8, renderer.getMaxAnisotropy ? renderer.getMaxAnisotropy() : renderer.capabilities.getMaxAnisotropy()); // (M2)
     Promise.all(Object.entries(CC0).map(async ([slot, [id, sx, sy]]) => {
       const [d, n] = await Promise.all([loadTexture(`data/levels/tex/cc0_${id}_detail.ktx2`), loadTexture(`data/levels/tex/cc0_${id}_nor.ktx2`)]);
       for (const t of [d, n]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1 / sx, 1 / sy); t.colorSpace = THREE.NoColorSpace; t.anisotropy = aniso; t.needsUpdate = true; }

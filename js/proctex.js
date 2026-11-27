@@ -364,7 +364,7 @@ let cache = null;
 
 export function makeTextures(renderer) {
   if (cache && cache.__renderer === renderer) return cache;
-  const maxAniso = renderer && renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 1;
+  const maxAniso = renderer?.getMaxAnisotropy ? renderer.getMaxAnisotropy() : renderer?.capabilities ? renderer.capabilities.getMaxAnisotropy() : 1; // (M2: the new renderer has getMaxAnisotropy() itself)
   const aniso = Math.min(8, maxAniso);
   const T = {};
   const timings = {};

@@ -4,9 +4,10 @@
 // sun actually is in the photo, then the whole sky is turned so the sun rakes across the front facade.
 // Night uses a painted gradient with stars. If an HDRI can't load, the procedural Sky model is used instead.
 import * as THREE from "three";
-import { Sky } from "three/addons/objects/Sky.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GPU } from "./gpu.js";
+const { Sky } = GPU ? { Sky: null } : await import("three/addons/objects/Sky.js");
 
 export const TIMES = {
   // sunAz: where we want the sun (degrees, 0 = in front of the terrace facade (+z), 90 = from +x); hdri: sky photo
@@ -47,14 +48,15 @@ export function createEnvironment(renderer, scene) {
 
   // ---- fallbacks: procedural sky (day) and painted night sky ----
   const skyScene = new THREE.Scene();
-  const sky = new Sky();
-  sky.scale.setScalar(1000);
-  skyScene.add(sky);
+  // (M2) the procedural Sky is a WebGL ShaderMaterial (its module doesn't even load on the new build): there, the short
+  // wait for the day photo shows a plain pale-blue sky instead (three/addons SkyMesh is the TSL version, for later)
+  const sky = Sky ? new Sky() : null;
+  if (sky) { sky.scale.setScalar(1000); skyScene.add(sky); } else skyScene.background = new THREE.Color(0xc5d7e4);
   const nightSphere = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), new THREE.MeshBasicMaterial({ map: nightTexture(), side: THREE.BackSide, depthWrite: false }));
   skyScene.add(nightSphere);
   // 128 per face = the same environment-map size the 512 px day sky produces (512 / 4; round 3 of IMPROVEMENT_LOG.md:
   // 1.1 MB -> 0.28 MB), so the shaders compiled with this stand-in stay valid when the photo arrives (no rebuild)
-  const cubeRT = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+  const cubeRT = new (GPU ? THREE.CubeRenderTarget : THREE.WebGLCubeRenderTarget)(128, { type: THREE.HalfFloatType });
   const cubeCam = new THREE.CubeCamera(1, 2000, cubeRT);
   skyScene.add(cubeCam);
 
@@ -103,9 +105,10 @@ export function createEnvironment(renderer, scene) {
       sunDir.setFromSphericalCoords(1, Math.PI / 2 - elev, THREE.MathUtils.degToRad(t.sunAz));
       scene.fog = new THREE.FogExp2(h.hazeFog ?? h.horizon, t.fogDensity);
     } else {
-      sky.visible = !t.night; nightSphere.visible = !!t.night;
+      if (sky) sky.visible = !t.night;
+      nightSphere.visible = !!t.night;
       sunDir.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - t.elev), THREE.MathUtils.degToRad(t.sunAz));
-      if (!t.night) {
+      if (!t.night && sky) {
         const u = sky.material.uniforms;
         u.turbidity.value = t.turbidity; u.rayleigh.value = t.rayleigh; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82;
         u.sunPosition.value.copy(sunDir);

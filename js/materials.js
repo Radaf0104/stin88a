@@ -2,6 +2,7 @@
 // Every Revit material name is matched to a "preset" (plaster, teak, stone tile, glass, chrome...). Textures are generated
 // procedurally in the browser (no downloads), tile seamlessly, and are mapped in metres (see addBoxUVs).
 import * as THREE from "three";
+import { GPU, TSL } from "./gpu.js";
 
 // ---------- tileable noise ----------
 function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
@@ -197,7 +198,10 @@ export function materialFor(name, info) {
         color: p.frosted ? 0xe8f2f2 : 0x4f5c5c, metalness: 0, roughness: p.frosted ? 0.45 : 0.02, transparent: true,
         opacity: p.frosted ? 0.55 : 0.28, envMapIntensity: 2.2, specularIntensity: 1, side: THREE.DoubleSide, depthWrite: false,
       });
-      if (!p.frosted) m.onBeforeCompile = (sh) => {
+      if (!p.frosted && GPU) { // (M2) node version: opacity rises to 0.9 at grazing angles (same Fresnel term)
+        const { materialOpacity, mix, pow, abs, dot, normalView, positionViewDirection, float } = TSL;
+        m.opacityNode = mix(materialOpacity, 0.9, pow(float(1).sub(abs(dot(normalView, positionViewDirection))), 4));
+      } else if (!p.frosted) m.onBeforeCompile = (sh) => {
         sh.fragmentShader = sh.fragmentShader.replace("#include <opaque_fragment>", `
           float glassFr = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 4.0);
           diffuseColor.a = mix(diffuseColor.a, 0.9, glassFr);
@@ -269,6 +273,16 @@ export function materialFor(name, info) {
 // and a slightly different tone per batten. The panels stay flat geometry; only the shading changes.
 // Battens follow world x or z (whichever runs along the panel), so they line up across neighbouring panels.
 function addBattens(m) {
+  if (GPU) { // (M2) the same batten pattern as TSL nodes, on world position / world normal
+    const { positionWorld, normalWorld, abs, select, fract, floor, smoothstep, sin, float, materialColor } = TSL;
+    const h = select(abs(normalWorld.x).greaterThan(abs(normalWorld.z)), positionWorld.z, positionWorld.x);
+    const t = fract(h.div(0.10)), idx = floor(h.div(0.10)), w = 0.6;
+    const edge = smoothstep(0, 0.12, t).mul(smoothstep(w, w - 0.12, t));
+    const tone = float(0.93).add(float(0.12).mul(fract(sin(idx.mul(12.9898)).mul(43758.5453))));
+    const shade = select(t.lessThan(w), float(0.72).add(float(0.28).mul(edge)).mul(tone), float(0.42));
+    m.colorNode = select(abs(normalWorld.y).lessThan(0.5), materialColor.mul(shade), materialColor);
+    return;
+  }
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vBatPos; varying vec3 vBatN;")

@@ -12,9 +12,10 @@ import { createRoomStyle, STYLE_ROOMS } from "./roomstyle.js";
 import { createAccents } from "./accents.js";
 import { makeTextures, tileRepeat } from "./proctex.js";
 import { createMap } from "./map.js";
-import { createGrade, createSky } from "./grade.js";
+import { createGrade, createSky, createPost } from "./grade.js";
 import { createIsolation } from "./isolate.js";
 import { createSpaces } from "./spaces.js";
+import { GPU, FORCE_WEBGL, TSL } from "./gpu.js";
 
 // ---------- text ----------
 const STR = {
@@ -72,10 +73,17 @@ const phone = matchMedia("(pointer: coarse)").matches && Math.min(screen.width, 
 
 // ---------- scene ----------
 const canvas = document.getElementById("scene");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true }); // stencil = section caps
+// (M2) ?renderer=webgpu: WebGPURenderer (three 0.186.1); it falls back to its own WebGL 2 backend by itself where
+// WebGPU is missing (?renderer=webgl2 forces that backend, for testing). Default: the classic WebGLRenderer (r170).
+const renderer = GPU
+  ? new THREE.WebGPURenderer({ canvas, antialias: true, stencil: true, forceWebGL: FORCE_WEBGL })
+  : new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true }); // stencil = section caps
+if (GPU) await renderer.init();
 const maxDpr = quality.high ? (phone ? 1.25 : 1.5) : 1; // sharpness cap: beyond this the GPU cost rises fast for little visible gain
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// (PCFSoftShadowMap was removed from the new renderer; PCF with a blur radius is its soft shadow)
+renderer.shadowMap.type = GPU ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+const maxAniso = () => (GPU ? renderer.getMaxAnisotropy() : renderer.capabilities.getMaxAnisotropy());
 renderer.toneMapping = THREE.AgXToneMapping; // keeps whites white and shadows colourful (ACES crushed the mid-tones)
 
 const scene = new THREE.Scene();
@@ -96,6 +104,9 @@ const sun = env.sun;
 // (round 20) 2048 / 1024: the shadow box is ~68 m, so 3.3 / 6.6 cm per texel - no visible change at hero distance
 // (tools/out/r20_shadow_compare.jpg) and 48 MB less GPU memory than 4096 on desktop
 sun.shadow.mapSize.setScalar(quality.high && !phone ? 2048 : 1024);
+if (GPU) { sun.shadow.radius = 2; sun.shadow.autoUpdate = false; } // (the new renderer: per-light "render once")
+// Ask for one fresh sun shadow render (classic: the renderer-wide flag; new renderer: the light's own flag)
+const requestShadow = () => { if (GPU) sun.shadow.needsUpdate = true; else renderer.shadowMap.needsUpdate = true; };
 const mood = createMoodLights(scene, quality.high && !phone ? 6 : 3);
 
 // (round 20) the old post-processing chain (composer, AO, bloom, grade pass) was never built any more: its code and
@@ -107,6 +118,9 @@ let composer = null, gtao = null, bloomPass = null, scenePass = null;
 const grade = createGrade();
 const sky = createSky(renderer);
 scene.add(sky.mesh);
+// (M2) new renderer: the grade (and the old bloom's brightening) is one post-processing pass again, written in TSL;
+// materials stay untouched and the sky is the scene background
+const post = GPU ? createPost(renderer, scene, camera, grade.uniforms) : null;
 // (M1) Architectural "shift lens": near eye level the picture is shifted up instead of tilting the camera, so the
 // building's verticals stay vertical, like the renders (3.jpg). The shift fades out as the camera rises above ~14 deg,
 // and is off while walking or inside a room. Only the projection changes (no extra cost); picking stays consistent
@@ -126,6 +140,7 @@ function applyLens() {
 }
 function renderScene() { // draw one frame to the screen
   applyLens();
+  if (post) { post.render(); return; }
   sky.update(scene);
   renderer.render(scene, camera);
   sky.restore(scene);
@@ -136,8 +151,12 @@ const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
 // Always on (parked at 1e6 m when nothing is cut): switching clipping on and off changes every material's shader, and
 // the first floor click used to rebuild ~17 shaders at once (a 3–4 s freeze). Staying on keeps the start-up shaders valid.
 renderer.clippingPlanes = [clipPlane];
+// (M2) the new renderer has no renderer-wide clipping: everything that the plan cut may slice lives in a
+// ClippingGroup instead (the section caps, labels and sky stay outside it, as they were never cut in practice)
+const clipped = GPU ? Object.assign(new THREE.ClippingGroup(), { clippingPlanes: [clipPlane] }) : scene;
+if (GPU) scene.add(clipped);
 const root = new THREE.Group();
-scene.add(root);
+clipped.add(root);
 
 const ui = {
   floorList: document.getElementById("floorList"), overviewBtn: document.getElementById("overviewBtn"),
@@ -361,6 +380,14 @@ let accents = null; // (round 22) js/accents.js - set once the levels are in
 function jitterInstanceUVs(m) {
   const c = m.clone();
   c.userData = { ...m.userData }; delete c.userData.isoPatched; delete c.userData.gradePatched; // (patched again later)
+  if (GPU) { // (M2) the same per-instance offset as TSL nodes: colour, roughness and normal read at the moved UV
+    const { varying, fract, vec2, float, instanceIndex, uv, texture, uniform, normalMap } = TSL;
+    const uvJ = uv().add(varying(fract(vec2(float(instanceIndex).mul(0.7548777), float(instanceIndex).mul(0.5698403)))));
+    if (c.map) c.colorNode = texture(c.map, uvJ).mul(uniform(c.color));
+    if (c.roughnessMap) c.roughnessNode = texture(c.roughnessMap, uvJ).g.mul(c.roughness);
+    if (c.normalMap) c.normalNode = normalMap(texture(c.normalMap, uvJ), uniform(c.normalScale));
+    return c;
+  }
   c.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace("#include <uv_vertex>", `#include <uv_vertex>
       #ifdef USE_INSTANCING
@@ -589,7 +616,7 @@ const SITE_PLAN_LIGHT = { // the light plan palette used in the white floor view
   grass: new THREE.Color("#c3d1a6"), soil: new THREE.Color("#ddd3c2"), road: new THREE.Color("#c4c3bf"), pad: new THREE.Color("#e8e5df"),
 };
 ground.name = "siteplan";
-scene.add(ground);
+clipped.add(ground); // (M2: inside the plan-cut group on the new renderer)
 const sitePlanReady = Promise.all([import("three/addons/loaders/GLTFLoader.js"), import("three/addons/libs/meshopt_decoder.module.js")])
   .then(([{ GLTFLoader }, { MeshoptDecoder }]) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("data/levels/SITEPLAN.gltf"))
   .then((g) => {
@@ -617,7 +644,7 @@ let massing = null;
 const massingOn = true; // always shown (no toggle any more); the pad-1 box hides itself when it blocks the view
 try { localStorage.removeItem("stin-massing"); } catch {}
 const massingReady = createMassing({ parent: ground }).then((m) => {
-  massing = m; m.setVisible(massingOn); m.setLang(lang); renderer.shadowMap.needsUpdate = true;
+  massing = m; m.setVisible(massingOn); m.setLang(lang); requestShadow();
   try { invalidate(300); } catch {} // (if it arrives before the render loop is set up, the first frame draws it anyway)
   return m;
 }).catch((e) => { console.warn("massing", e); return null; });
@@ -668,7 +695,7 @@ mark("collision");
 // The generated trees, distant hills and 3D grass were replaced by the site plan (see "Ground" above). The calls the
 // rest of the page makes to the landscape stay, on this empty stand-in (js/landscape.js is no longer loaded).
 const landscape = { group: new THREE.Group(), setNight() {}, updateOcclusion() {}, tick() {}, addGrass() {} };
-scene.add(landscape.group);
+clipped.add(landscape.group);
 
 // ---------- real-world map (Google 3D Tiles) ----------
 const map = createMap({ scene, camera, renderer, site: CONFIG.site ?? {}, apiKey: CONFIG.googleMapsKey });
@@ -721,7 +748,7 @@ function showBand(lo = -Infinity, hi = Infinity) {
 function refreshShadows() {
   const keep = band;
   showBand();
-  renderer.shadowMap.needsUpdate = true;
+  requestShadow();
   // drawn into the scene's own buffer (the next frame overwrites it), not the screen: a screen render needs a second,
   // screen-specific version of every shader, which used to be built on the first floor click (a multi-second freeze)
   renderer.setRenderTarget(scenePass ? scenePass.target : null);
@@ -818,7 +845,7 @@ const overviewDoorProxies = [];
     geos.forEach((g) => g.dispose());
     if (!merged) continue;
     const m = new THREE.Mesh(merged, mat); m.castShadow = !mat.transparent; m.receiveShadow = true; if (mat.transparent) m.renderOrder = 3;
-    m.visible = false; m.userData.overviewDoors = true; scene.add(m); overviewDoorProxies.push(m);
+    m.visible = false; m.userData.overviewDoors = true; clipped.add(m); overviewDoorProxies.push(m);
   }
 }
 timings.doors = `${spaces.doors.length} doors (${spaces.doors.filter((d) => d.role === "entrance").length} entrance, ${spaces.doors.filter((d) => d.role === "inside").length} inside)`;
@@ -1178,7 +1205,7 @@ function makeTv(u, box) {
   iso.patch(screen.material); // cut away with the wall it hangs on
   const hit = new THREE.Mesh(new THREE.BoxGeometry(s.x + 0.04, s.y + 0.04, s.z + 0.04), new THREE.MeshBasicMaterial({ visible: false }));
   hit.position.copy(c);
-  scene.add(screen, hit);
+  clipped.add(screen, hit);
   const tv = { screen, hit, on: false };
   hit.userData.tv = screen.userData.tv = tv;
   return tv;
@@ -1695,7 +1722,11 @@ const texLoader = new THREE.TextureLoader();
 function panoOf(u) { return u?.kind === "space" ? u.space : CONFIG.types[u?.type]; }
 function openPano(u) {
   if (!pano.renderer) {
-    pano.renderer = new THREE.WebGLRenderer({ canvas: pano.canvas, antialias: true });
+    // (M2) the new build has no WebGLRenderer: the 360° viewer uses a second WebGPURenderer (it initialises itself on
+    // its first frames)
+    pano.renderer = GPU ? new THREE.WebGPURenderer({ canvas: pano.canvas, antialias: true, forceWebGL: FORCE_WEBGL })
+      : new THREE.WebGLRenderer({ canvas: pano.canvas, antialias: true });
+    if (GPU) pano.renderer.init();
     pano.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   }
   const type = panoOf(u);
@@ -1717,7 +1748,7 @@ function openPano(u) {
     texLoader.load(src, (tex) => {
       if (pano.src !== src) { tex.dispose(); return; } // another room type was opened meanwhile
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = pano.renderer.capabilities.getMaxAnisotropy(); // sharper near the top/bottom
+      tex.anisotropy = (GPU ? pano.renderer.getMaxAnisotropy() : pano.renderer.capabilities.getMaxAnisotropy()); // sharper near the top/bottom
       tex.userData.pano = true;
       setMap(tex);
     }, undefined, () => (note.textContent = t("placeholder")));

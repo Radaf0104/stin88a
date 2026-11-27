@@ -5,6 +5,7 @@
 // formula runs at the very end of every material's own shader, on the finished display colour (after the tone curve
 // and sRGB conversion, as before), so the picture keeps its look without a second pass over the screen.
 import * as THREE from "three";
+import { GPU, TSL } from "./gpu.js";
 
 export const GRADE_DEFAULT = { gain: 1, contrast: 1, saturation: 1, lift: 0, warm: [1, 1, 1], cool: [1, 1, 1], vignette: 0, gamma: 1 };
 
@@ -53,6 +54,8 @@ export function createGrade() {
     uGradeWarm: { value: new THREE.Vector3(1, 1, 1) }, uGradeCool: { value: new THREE.Vector3(1, 1, 1) },
     uGradeVignette: { value: 0 }, uGradeGain: { value: 1 }, uGradeGamma: { value: 1 }, uGradeRes: { value: new THREE.Vector2(1, 1) },
   };
+  // (M2) new renderer: the same numbers as TSL uniform nodes (they also have .value, so set() below works unchanged)
+  if (GPU) for (const k in U) U[k] = TSL.uniform(U[k].value);
   let bloomOn = true;
   // k / lo / hi: bloom's own strength and threshold; amb: the even glow its widest blur spread over the whole picture
   // (tuned against the old post-processed renders: average brightness within ~1–2 % on overview, facade and lawn)
@@ -62,6 +65,7 @@ export function createGrade() {
     U.uBloomLo.value = bloomTune.lo; U.uBloomHi.value = bloomTune.hi;
   }
   function patch(m) {
+    if (GPU) return; // (M2) new renderer: graded once in the post pass (createPost), materials untouched
     if (!m || m.userData.gradePatched) return;
     m.userData.gradePatched = true;
     const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey?.bind(m);
@@ -102,6 +106,8 @@ export function createGrade() {
 // so the grade can be added to it too. Call update() before every render: it copies scene.background / intensity /
 // rotation and hides scene.background for that render (restore()).
 export function createSky(renderer) {
+  // (M2) new renderer: the sky stays scene.background (it is graded by the post pass with everything else)
+  if (GPU) return { mesh: new THREE.Group(), update() {}, restore() {} };
   const sh = THREE.ShaderLib.backgroundCube;
   const mat = new THREE.ShaderMaterial({
     name: "SkyBackground", uniforms: THREE.UniformsUtils.clone(sh.uniforms), vertexShader: sh.vertexShader, fragmentShader: sh.fragmentShader,
@@ -136,5 +142,48 @@ export function createSky(renderer) {
       held = bg; scene.background = null;
     },
     restore(scene) { if (held) { scene.background = held; held = null; } },
+  };
+}
+
+// (M2) New renderer only: the whole picture is drawn once (with 4x multisampling, like the canvas's own edge smoothing),
+// then one TSL pass does what grade.js injected into every material on the classic renderer, in the same order:
+//  1. in linear light, the old bloom's brightening (bright surfaces + a small even glow) - PRE_TONEMAP above
+//     (fog needs no move here: node materials already mix it before the tone curve)
+//  2. the tone curve + sRGB (renderOutput, using the renderer's toneMapping / exposure / colour space)
+//  3. the grade on the display colour - GLSL above, line for line
+// U: the grade's uniforms (TSL uniform nodes on this renderer). render() rebuilds the pass when the tone curve changes
+// (day = Neutral, golden / night = AgX).
+export function createPost(renderer, scene, camera, U) {
+  const { pass, vec3, vec4, vec2, float, dot, mix, smoothstep, clamp, pow, length, screenUV, screenSize, renderOutput } = TSL;
+  // the section caps count surfaces in the stencil buffer (js/main.js), so the pass's target needs one too
+  const depthTexture = new THREE.DepthTexture();
+  depthTexture.format = THREE.DepthStencilFormat; depthTexture.type = THREE.UnsignedInt248Type;
+  const scenePass = pass(scene, camera, { samples: 4, stencilBuffer: true, depthTexture });
+  const src = scenePass.getTextureNode("output");
+  const LUM = vec3(0.2126, 0.7152, 0.0722);
+  const L0 = dot(src.rgb, LUM);
+  const bloomed = src.rgb.add(src.rgb.mul(U.uBloomK).mul(smoothstep(U.uBloomLo, U.uBloomHi, L0))).add(src.rgb.mul(U.uBloomAmb));
+  const shown = renderOutput(vec4(bloomed, src.a));
+  let gc = shown.rgb;
+  const gL = dot(gc, LUM);
+  gc = gc.mul(mix(U.uGradeCool, U.uGradeWarm, smoothstep(0.15, 0.85, gL)));                      // split toning
+  gc = clamp(gc.sub(0.5).mul(U.uGradeContrast).add(0.5), 0.0, 1.0);                               // contrast
+  gc = pow(gc, vec3(U.uGradeGamma));                                                               // midtone gamma
+  gc = gc.add(U.uGradeLift.mul(float(1).sub(gc)).mul(float(1).sub(smoothstep(0.0, 0.5, gc))));   // shadow lift
+  gc = mix(vec3(dot(gc, LUM)), gc, U.uGradeSaturation);                                            // saturation
+  const aspect = screenSize.x.div(screenSize.y);
+  const gR = length(screenUV.sub(0.5).mul(vec2(aspect, 1))).div(length(vec2(aspect.mul(0.5), 0.5)));
+  gc = gc.mul(float(1).sub(U.uGradeVignette.mul(smoothstep(0.6, 1.0, gR))));                    // vignette
+  gc = clamp(gc.mul(U.uGradeGain), 0.0, 1.0);
+  const pipeline = new THREE.RenderPipeline(renderer);
+  pipeline.outputColorTransform = false; // (done above, before the grade)
+  pipeline.outputNode = vec4(mix(shown.rgb, gc, U.uGradeOn), 1);
+  let tm = renderer.toneMapping, cs = renderer.outputColorSpace;
+  return {
+    pipeline, scenePass,
+    render() {
+      if (renderer.toneMapping !== tm || renderer.outputColorSpace !== cs) { tm = renderer.toneMapping; cs = renderer.outputColorSpace; pipeline.needsUpdate = true; }
+      pipeline.render();
+    },
   };
 }

@@ -8,16 +8,25 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  <!-- (M2) Two renderers, one code base. Default: the classic WebGLRenderer on three r170. With ?renderer=webgpu (or
+       ?renderer=webgl2 = the same new renderer forced onto its WebGL 2 backend), "three" is the WebGPU build of a newer
+       pinned three (WebGPURenderer + TSL node materials). js/gpu.js tells the modules which one is running. -->
+  <script>
+    (function () {
+      var q = location.search, gpu = /[?&]renderer=(webgpu|webgl2)\b/.test(q);
+      var v = gpu ? "0.186.1" : "0.170.0", base = "https://cdn.jsdelivr.net/npm/three@" + v;
+      var imports = {
+        "three": base + (gpu ? "/build/three.webgpu.min.js" : "/build/three.module.min.js"),
+        "three/addons/": base + "/examples/jsm/",
         "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js",
         "3d-tiles-renderer/three": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.5.4/build/index.three.js",
         "3d-tiles-renderer/plugins": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.5.4/build/index.plugins.js"
-      }
-    }
+      };
+      if (gpu) { imports["three/webgpu"] = base + "/build/three.webgpu.min.js"; imports["three/tsl"] = base + "/build/three.tsl.min.js"; }
+      var s = document.createElement("script");
+      s.type = "importmap"; s.textContent = JSON.stringify({ imports: imports });
+      document.currentScript.after(s);
+    })();
   </script>
   <!-- Start everything the first 3D frame needs at once, instead of one file after another as the code discovers it:
        the model data and the code libraries download in parallel while the cover picture is shown. -->
@@ -35,6 +44,7 @@
   <!-- (round 4 of IMPROVEMENT_LOG.md) the rest of the module tree and the level data: without these the browser only
        finds them one import level at a time (4-5 round trips in a row on a phone) -->
   <link rel="modulepreload" href="js/config.js" />
+  <link rel="modulepreload" href="js/gpu.js" />
   <link rel="modulepreload" href="js/lighting.js" />
   <link rel="modulepreload" href="js/walk.js" />
   <link rel="modulepreload" href="js/massing.js" />

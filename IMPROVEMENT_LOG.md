@@ -432,3 +432,38 @@ First milestone of the WebGPU/TSL plan (AUDIT_WEBGPU_TSL.md §6.5). Backup tag `
 - Pushed `v6-webgpu` to `origin/main` as a fast-forward (`cebeb71..9a151f2`, no force). Rollback tag `v5-live-cebeb71` was pushed first; `v5-live-94e0ddf` is unchanged. Pages served it after ~40 s.
 - Live check (cache refreshed): eye-level first view at (−2, 3.8, 41.7), environment 0.35, sun 6.0, every request OK, no console errors. Returning visitors may see old files for up to 10 minutes (max-age 600).
 - Push notification sent.
+
+## M2 (v6-webgpu) — WebGPURenderer + TSL port, at parity, behind a flag (user: "Start M2")
+The default site is unchanged (classic WebGLRenderer, three r170). `?renderer=webgpu` runs the same code on WebGPURenderer, three **0.186.1** (pinned; released 2026-09-24). `?renderer=webgl2` runs the new renderer forced onto its WebGL 2 backend, the automatic fallback where WebGPU is missing.
+- **How**: index.html writes the importmap from the URL: "three" is either `three.module.min.js` r170 or `three.webgpu.min.js` 0.186.1, plus `three/tsl`. js/gpu.js exports `GPU` / `FORCE_WEBGL` / `TSL`, and each module picks its branch.
+- **Key finding**: WebGPURenderer converts classic materials to node materials at build time, but still reads colour, roughness and the other values from the original material. So the TSL nodes (`maskNode`, `colorNode`, `opacityNode`, `normalNode`) are set on the existing materials, and every runtime change (palettes, glow, site plan lift) keeps working with no material rewrite.
+- **Ported** (every `onBeforeCompile` now has a TSL branch; none of them run on the new renderer):
+  - **Grade**: one post pass (`createPost`: `pass()` 4× MSAA → old bloom lift in linear → `renderOutput` → split tone / contrast / gamma / lift / saturation / vignette / gain). It rebuilds when the tone curve changes (Neutral ↔ AgX). Grade uniforms become TSL uniforms with the same `.value` API.
+  - **Isolation mask** (floor, room and walk views): one shared `maskNode` (same plan-mask texture, cut rectangles, deep stairs, screen dissolve). `maskShadowNode = true` keeps cut walls casting shadows, as before.
+  - **Small shader hooks**:
+    - glass Fresnel opacity → `opacityNode`
+    - procedural battens → `colorNode`
+    - per-instance UV jitter → `varying(instanceIndex)` offset on colour, roughness and normal
+    - accent contact shadows → `opacityNode` from an `accHalf` instanced attribute
+  - **Plan cuts**: no renderer-wide clipping on the new renderer, so building, ground, door proxies and TV live in a `ClippingGroup`. The section-cap stencil needed a depth+stencil texture on the post pass's target. Before that fix the cap plane covered the whole floor.
+  - **Sun shadow**: PCF radius 2 (PCFSoft was removed). "Render once" uses the light's own `shadow.autoUpdate` / `needsUpdate` (`requestShadow()`).
+  - **Sky**: the scene background (graded by the post pass). The procedural Sky addon can't load on the new build (it imports `UniformsUtils`), so it is imported only on the classic path. The new renderer shows a plain pale-blue sky for the moment before the photo arrives.
+  - **Other**: pano viewer gets its own WebGPURenderer; anisotropy queries use `getMaxAnisotropy()`.
+- **Measured** (RTX 4060 laptop, built-in browser, 1600×900 at 1.25×, GPU-synced):
+
+| | Classic r170 | WebGPU 0.186.1 | WebGL 2 backend |
+|---|---|---|---|
+| Hero frame, median | 11.0 ms | 8.6 ms | not measurable with readPixels sync |
+| Overview frame, median | 8.2 ms | 9.1 ms | not measurable |
+| Hero luminance p5/p50/p95 | 49/127/233 | 53/136/240 | 53/136/240 |
+| Hero mean RGB | 123/132/126 | 127/136/132 | 127/136/132 |
+| Ready (start-up shaders) | 1.1–1.8 s | 8.4 s (shaders 6.0 s) | 5.3 s |
+
+- **Look**: near parity. The new renderer is ~7 % brighter in the midtones (the bloom lift now also hits the sky; PMREM / MSAA differ slightly). Side by side: tools/out/m2_parity.jpg.
+- **Checks on WebGPU**: hero, floor 2 (cut, caps, isolation, status colours), unit K.405 room cutaway, overview, golden, night, walk (floor 4), style room K.405 walk-in (8 CC0 textures, borrowed lights). No console errors. tools/out/m2_gpu_modes.jpg, m2_gpu_floor2b.jpg, m2_gpu_k405.jpg.
+- **Open before the new renderer can be the default**:
+  1. Start-up shader compile is 5–8× slower: needs async warm-up per level or a pipeline cache.
+  2. Map mode (3d-tiles-renderer 0.5.4) is untested on the new renderer.
+  3. 360° pano is untested.
+  4. The procedural Sky stand-in is to be replaced by the TSL `SkyMesh`.
+  5. The ~7 % brightness difference.

@@ -5,6 +5,7 @@
 // Per level: three GPU-instanced meshes (shadows, LED lines, floor washes) with shared materials - 12 draw calls in all.
 // Brightness: time of day (glow: day 0, golden 0.4, night 1) x the room's light switch (style rooms, js/roomstyle.js).
 import * as THREE from "three";
+import { GPU, TSL } from "./gpu.js";
 
 const WARM = new THREE.Color(0xffc98f);
 const FALLOFF = 0.12; // m: how far a contact shadow fades out beyond the furniture's foot
@@ -12,6 +13,16 @@ const FALLOFF = 0.12; // m: how far a contact shadow fades out beyond the furnit
 function shadowMaterial() {
   const m = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   m.name = "accent_shadow";
+  if (GPU) { // (M2) the same fall-off as TSL nodes; each instance's half size + strength come in the "accHalf" attribute
+    const { attribute, positionGeometry, varying, vec2, vec3, max, abs, length, smoothstep, float } = TSL;
+    const a = attribute("accHalf", "vec3"), half = varying(a.xy), k = varying(a.z);
+    const P = varying(positionGeometry.xz.mul(2).mul(a.xy));
+    const accQ = max(abs(P).sub(half.sub(FALLOFF)), vec2(0));
+    const accK = float(1).sub(smoothstep(0, FALLOFF, length(accQ)));
+    m.colorNode = vec3(0);
+    m.opacityNode = accK.mul(accK).mul(k);
+    return m;
+  }
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vAccP; varying vec2 vAccHalf;")
       .replace("#include <begin_vertex>", `#include <begin_vertex>
@@ -64,11 +75,15 @@ export async function createAccents({ root, levelObjects, url = "data/room_accen
   for (const [L, lev] of Object.entries(data.levels)) {
     const floor = Math.min(...lev.shadow.map((r) => r[5]), ...lev.plinth.map((r) => r[4]));
     if (lev.shadow.length) {
-      const mesh = new THREE.InstancedMesh(plane, shadowMat, lev.shadow.length); mesh.name = L + "_accent_shadows";
+      // (M2) new renderer: its own copy of the plane carrying each instance's half size and strength
+      const geo = GPU ? plane.clone() : plane, half = GPU ? new Float32Array(lev.shadow.length * 3) : null;
+      const mesh = new THREE.InstancedMesh(geo, shadowMat, lev.shadow.length); mesh.name = L + "_accent_shadows";
       lev.shadow.forEach(([, x, z, w, d, y, k], i) => {
         mesh.setMatrixAt(i, m4.compose(p.set(x, y + 0.009, z), q.identity(), s.set(w, 1, d)));
         mesh.setColorAt(i, col.setRGB(k, k, k));
+        if (half) half.set([w / 2, d / 2, k], i * 3);
       });
+      if (half) geo.setAttribute("accHalf", new THREE.InstancedBufferAttribute(half, 3));
       add(mesh, floor, 2);
     }
     const nLines = lev.plinth.length + lev.niche.length;
