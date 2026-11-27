@@ -657,6 +657,7 @@ let band = [-Infinity, Infinity];
 // (round 15) the style rooms' small dressing - kept as separate meshes so it can be clicked (js/roomstyle.js) - is only
 // specks behind glass from outside: ~45 draw calls in the overview for nothing
 const SMALL_DRESSING = new Set(["lamp", "led", "decor", "cushion", "curtain", "rug", "plant"]);
+const OVERVIEW_HIDDEN = new Set(["chair", "plant", "lamp", "decor", "cushion", "rug"]);
 function showBand(lo = -Infinity, hi = Infinity) {
   band = [lo, hi];
   for (const o of levelObjects) o.visible = o.userData.y[1] >= lo && o.userData.y[0] <= hi && !o.userData.hidden;
@@ -669,7 +670,10 @@ function showBand(lo = -Infinity, hi = Infinity) {
     for (const m of overviewDoorProxies) m.visible = proxy; if (proxy) for (const d of overviewDoorLeaves) d.pivot.visible = false; } catch {}
   // nor the bathrooms: their fittings (instanced) and the Revit plumbing at the end of each building mesh; nor the TVs
   // (on the inner walls, ~2 draw calls each)
-  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv" || (o.userData.style_room && SMALL_DRESSING.has(o.userData.kind)))) o.visible = false;
+  // (round 23) nor the small loose items in every room (chairs, plants, lamps, decor...): through the windows they
+  // changed at most 15 of ~89k pixels on any gallery camera, but cost 29 draw calls and ~138k triangles (no frame-time
+  // change measurable on a desktop GPU; meant for weak phone GPUs). Beds, casework, curtains and the terrace stay.
+  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv" || OVERVIEW_HIDDEN.has(o.userData.kind) || (o.userData.style_room && SMALL_DRESSING.has(o.userData.kind)))) o.visible = false;
   for (const m of buildingMeshes) {
     m.geometry.setDrawRange(0, outside ? m.userData.overviewVerts : Infinity);
     if (outside && !m.userData.overviewVerts) m.visible = false;
