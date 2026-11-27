@@ -163,11 +163,14 @@ const POST = GPU ? await Promise.all([
   import("three/addons/tsl/display/DenoiseNode.js"),
 ]).then(([a, b, s, d]) => ({ ao: a.ao, bloom: b.bloom, smaa: s.smaa, denoise: d.denoise })) : null;
 
-// Ultra: full-resolution AO + bloom (discrete desktop GPUs). High: half-resolution AO + bloom (default on desktops /
-// laptops). Balanced: no AO, no real bloom, 4x MSAA (phones / tablets). ?quality=ultra|high|balanced overrides.
+// ?quality=ultra|high|balanced overrides the default (balanced on phones, high elsewhere).
+// (M4) every tier draws the scene with 4x MSAA again: SMAA (M3) can't fix thin geometry, so the 10 cm timber battens
+// broke into wide moire bands at 20-40 m. AO then needs its own depth pass + a second (stencil) chain, and that set-up
+// still freezes ~1-1.5 s on the first room view / return to the exterior and needs a ~4-5 s priming task in idle time.
+// Until that is solved AO is opt-in (Ultra); High = MSAA + selective bloom, smooth.
 export const QUALITY = {
-  ultra:    { name: "ultra", ao: true, aoScale: 1, aoSamples: 16, bloom: true, msaa: 0, smaa: true },
-  high:     { name: "high", ao: true, aoScale: 0.5, aoSamples: 12, bloom: true, msaa: 0, smaa: true },
+  ultra:    { name: "ultra", ao: true, aoScale: 0.5, aoSamples: 12, bloom: true, msaa: 4, smaa: false },
+  high:     { name: "high", ao: false, bloom: true, msaa: 4, smaa: false },
   balanced: { name: "balanced", ao: false, bloom: false, msaa: 4, smaa: false },
 };
 
@@ -184,17 +187,24 @@ export function createPost(renderer, scene, camera, U, Q = QUALITY.high) {
     if (stencil) { depthTexture = new THREE.DepthTexture(); depthTexture.format = THREE.DepthStencilFormat; depthTexture.type = THREE.UnsignedInt248Type; }
     const scenePass = pass(scene, camera, { samples: Q.msaa, stencilBuffer: stencil, ...(depthTexture ? { depthTexture } : {}) });
     const src = scenePass.getTextureNode("output");
-    let lin = src.rgb, aoPass = null;
+    let lin = src.rgb, aoPass = null, depthOnly = null;
     if (Q.ao && !stencil) {
-      aoPass = POST.ao(scenePass.getTextureNode("depth"), null, camera);
+      // (M4) AO's own depth: the scene once more, at the AO's resolution, with one flat material and no colour output
+      // (a multisampled depth buffer can't be read by GTAO). Glass writes depth here too, so panes take the AO of their
+      // own frame instead of the room behind them.
+      depthOnly = pass(scene, camera, { samples: 0 });
+      depthOnly.setResolutionScale(Q.aoScale);
+      depthOnly.overrideMaterial = Object.assign(new THREE.MeshBasicNodeMaterial(), { colorWrite: false });
+      const aoDepth = depthOnly.getTextureNode("depth");
+      aoPass = POST.ao(aoDepth, null, camera);
       aoPass.resolutionScale = Q.aoScale;
       aoPass.samples.value = Q.aoSamples;
       // 0.35 m reach: window boxes, soffits and fin gaps darken, without dark halos around thin railings (0.6 m had them)
       aoPass.radius.value = 0.35; aoPass.thickness.value = 1; aoPass.distanceExponent.value = 1.3; aoPass.scale.value = 1.1;
       // edge-aware blur of the AO (normals rebuilt from depth): removes its sampling grain without bleeding over edges
-      const depthNode = scenePass.getTextureNode("depth");
-      const aoClean = POST.denoise(aoPass.getTextureNode(), depthNode, null, camera);
-      lin = lin.mul(mix(float(1), aoClean.r, aoAmount));
+      const aoClean = POST.denoise(aoPass.getTextureNode(), aoDepth, null, camera);
+      // (M4) at 80 % strength: at full strength thin railings and fins read heavier than in the renders
+      lin = lin.mul(mix(float(1), aoClean.r, aoAmount.mul(0.8)));
     }
     // the old per-pixel brightening stays on every tier (the look and brightness were tuned with it); the AO tiers add
     // a real, selective glow on top: only what passes the time-of-day threshold (sun glints by day, lamps / LEDs at night)
@@ -219,7 +229,7 @@ export function createPost(renderer, scene, camera, U, Q = QUALITY.high) {
     const pipeline = new THREE.RenderPipeline(renderer);
     pipeline.outputColorTransform = false; // (done above, before the grade)
     pipeline.outputNode = out;
-    return { pipeline, scenePass, aoPass };
+    return { pipeline, scenePass, aoPass, depthOnly };
   }
   const cutChain = chain(true);
   const openChain = Q.ao ? chain(false) : cutChain;
@@ -228,8 +238,24 @@ export function createPost(renderer, scene, camera, U, Q = QUALITY.high) {
   return {
     aoAmount, quality: Q, chains,
     aoPass: openChain.aoPass,
-    // the render targets the scene is drawn into (shaders are pre-compiled for each); [0] = the start-up view's
-    targets: () => chains.map((c) => c.scenePass.renderTarget),
+    // every way the scene is drawn: { target, override material } - shaders are pre-compiled for each. Order: the
+    // exterior pass, its AO depth pass (start-up view), then the plan-cut pass
+    passes: () => [
+      { target: openChain.scenePass.renderTarget, override: null, stencil: openChain === cutChain },
+      ...(openChain.depthOnly ? [{ target: openChain.depthOnly.renderTarget, override: openChain.depthOnly.overrideMaterial, stencil: false }] : []),
+      ...(cutChain !== openChain ? [{ target: cutChain.scenePass.renderTarget, override: null, stencil: true }] : []),
+    ],
+    // (M4) allocate every pass's target at the screen size before anything is compiled for it: a multisampled target
+    // that had never been drawn compiled with the wrong sample count, so its first real frame rebuilt every pipeline
+    // (the first floor click froze ~3 s)
+    prime() {
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+      for (const c of chains) for (const pn of [c.scenePass, c.depthOnly]) {
+        if (!pn) continue;
+        pn.setSize(size.x, size.y);
+        renderer.initRenderTarget(pn.renderTarget);
+      }
+    },
     render(cut = false) {
       if (renderer.toneMapping !== tm || renderer.outputColorSpace !== cs) {
         tm = renderer.toneMapping; cs = renderer.outputColorSpace;

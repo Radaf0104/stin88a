@@ -274,13 +274,17 @@ export function materialFor(name, info) {
 // Battens follow world x or z (whichever runs along the panel), so they line up across neighbouring panels.
 function addBattens(m) {
   if (GPU) { // (M2) the same batten pattern as TSL nodes, on world position / world normal
-    const { positionWorld, normalWorld, abs, select, fract, floor, smoothstep, sin, float, materialColor } = TSL;
+    const { positionWorld, normalWorld, abs, select, fract, floor, smoothstep, sin, float, materialColor, fwidth, mix } = TSL;
     const h = select(abs(normalWorld.x).greaterThan(abs(normalWorld.z)), positionWorld.z, positionWorld.x);
     const t = fract(h.div(0.10)), idx = floor(h.div(0.10)), w = 0.6;
     const edge = smoothstep(0, 0.12, t).mul(smoothstep(w, w - 0.12, t));
     const tone = float(0.93).add(float(0.12).mul(fract(sin(idx.mul(12.9898)).mul(43758.5453))));
     const shade = select(t.lessThan(w), float(0.72).add(float(0.28).mul(edge)).mul(tone), float(0.42));
-    m.colorNode = select(abs(normalWorld.y).lessThan(0.5), materialColor.mul(shade), materialColor);
+    // (M4) anti-aliased: where one 10 cm batten covers less than ~2-3 pixels the pattern fades to its average tone
+    // (0.73), instead of breaking into wavy moire bands across the screens at a distance
+    const perPixel = fwidth(h.div(0.10));
+    const shadeAA = mix(shade, float(0.73), smoothstep(0.25, 0.6, perPixel));
+    m.colorNode = select(abs(normalWorld.y).lessThan(0.5), materialColor.mul(shadeAA), materialColor);
     return;
   }
   m.onBeforeCompile = (sh) => {

@@ -515,3 +515,36 @@ New renderer only (`?renderer=webgpu`). The default classic site is unchanged (r
   - AO still makes railings read heavier.
   - The glass lantern picks up AO from what is behind it (transparent surfaces don't write depth).
   - Batten gaps are now strongly shaded: check against 3.jpg.
+
+## M4 (v6-webgpu) — materials + an AA regression fixed (user: "Start M4"); honest result: mostly infrastructure
+New renderer only. Classic unchanged (ready 1.6 s, no errors). No downloads: CC0 texture sets were not fetched (they need the user's approval).
+- **js/materialsTSL.js** (new, opt-in `?look=1`): TSL detail layered on the existing materials by name, in world space:
+  - plaster / concrete: macro breakup ±6–9 %, mottling, grime at wall feet, vertical streaks
+  - timber: per-batten tone from `hash(instanceIndex)`
+  - powder coat: roughness noise
+  - glass: IOR 1.52, roughness 0.03, env 5.5
+  - asphalt / pavers: patches + aggregate
+  - lawn: dry / lush hue patches over 15–30 m
+
+  Measured A/B at 25–40 m: image mean changes ~1–2 % and is barely visible (tools/out/m4_ab.jpg). But its noise nodes **doubled the WebGPU start-up shader build (ready 3.4–3.6 s → 6.8 s, two runs each)**, so it is off by default. The real photoreal jump needs real PBR texture sets (CC0, approval), trees / landscape (M5) and reflections, not more procedural noise.
+- **Anti-aliasing regression from M3 fixed**:
+  - M3's High tier swapped 4× MSAA for SMAA (AO needs a readable depth buffer), and the 10 cm timber battens broke into wide moiré bands at 20–40 m (tools/out/m4_moire.jpg). Every tier now draws with 4× MSAA again.
+  - The procedural batten shading (`addBattens`) also fades to its average tone where a batten covers < ~2–3 pixels (`fwidth`).
+- **AO is now opt-in (Ultra)**:
+  - With MSAA, GTAO can't read the multisampled depth ("textureGather(texture_depth_multisampled_2d)"). So AO gets its own half-resolution depth pass (one flat override material; glass writes depth there, so panes no longer take AO from the room behind). AO strength is 80 %.
+  - Pre-compiling that pass and the plan-cut (stencil) chain never matched what their own pipelines draw (compileAsync, and even a plain render into the target, left 170–220 pipelines to the first floor click: ~3 s freezes). Only a draw through the chain itself primed it: `primeCutPass()` draws every mesh through both chains once in idle time, then a normal frame in the same task (never shown). After that the first floor click takes 4 ms.
+  - Even primed, the AO set-up still froze ~1–1.5 s on the first room view / return to the exterior, and the priming task itself is ~4–5 s. So:
+    - **High** (desktop default) = MSAA + selective bloom, no AO.
+    - **Ultra** (`?quality=ultra`) = + AO.
+- **High tier on WebGPU, after warm-up**:
+  - nothing > 150 ms after ready
+  - first floor click: no slow frame
+  - room K.405: frames ≤ 0.4 s
+  - overview, golden, night, day: none
+  - 0 errors
+- **Warm-up**: the hidden section-cap counter (stencil material) is no longer compiled for passes without a stencil buffer (that produced pipeline validation errors).
+- **Still open**:
+  - AO without stalls (likely: one chain with stencil + MRT depth, or AO computed only when the view is still)
+  - real PBR textures
+  - trees / terrain / haze (M5)
+  - 37 one-off "isCubeTexture of null" TSL errors seen once in an AO + priming run, not reproduced by per-object compiles; not seen on High

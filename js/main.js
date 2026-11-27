@@ -16,6 +16,7 @@ import { createGrade, createSky, createPost, QUALITY } from "./grade.js";
 import { createIsolation } from "./isolate.js";
 import { createSpaces } from "./spaces.js";
 import { GPU, FORCE_WEBGL, TSL } from "./gpu.js";
+import { createLookTSL } from "./materialsTSL.js";
 
 // ---------- text ----------
 const STR = {
@@ -128,11 +129,15 @@ for (const k of ["ao", "bloom", "smaa"]) if (qs.has(k)) tier[k] = qs.get(k) === 
 if (qs.has("msaa")) tier.msaa = +qs.get("msaa");
 if (tier.ao) { tier.aoScale ??= 0.5; tier.aoSamples ??= 12; }
 const post = GPU ? createPost(renderer, scene, camera, grade.uniforms, tier) : null;
-// where the scene is really drawn: shaders must be pre-compiled for this target (classic: the screen)
-// where the scene is really drawn: shaders must be pre-compiled for these targets (classic: the screen). New renderer:
-// [0] = the exterior chain (with AO), [1] = the plan-cut chain (stencil for the section caps) on the AO tiers
-const compileTargets = () => (post ? post.targets() : [null]);
-const compileTarget = () => compileTargets()[0];
+// Every way the scene is really drawn - shaders must be pre-compiled for each (classic: just the screen). New renderer:
+// the exterior pass, the AO tiers' depth pass (one flat override material) and the plan-cut pass (stencil, caps).
+const compilePasses = () => (post ? post.passes() : [{ target: null, override: null }]);
+// run fn() (which calls compileAsync) as if drawing pass p: its target and its override material
+function compileFor(p, fn) {
+  renderer.setRenderTarget(p.target);
+  const keep = scene.overrideMaterial; scene.overrideMaterial = p.override;
+  try { return fn(); } finally { scene.overrideMaterial = keep; renderer.setRenderTarget(null); }
+}
 // (M1) Architectural "shift lens": near eye level the picture is shifted up instead of tilting the camera, so the
 // building's verticals stay vertical, like the renders (3.jpg). The shift fades out as the camera rises above ~14 deg,
 // and is off while walking or inside a room. Only the projection changes (no extra cost); picking stays consistent
@@ -1995,11 +2000,9 @@ async function buildAccents() {
   // compile their 3 shaders off-screen (shown for this synchronous moment only, no frame is drawn in between), then
   // let the current view decide what is visible
   const compiling = [];
-  for (const target of compileTargets()) {
-    renderer.setRenderTarget(target);
+  for (const p of compilePasses()) compileFor(p, () => {
     for (const m of meshes) { m.visible = true; compiling.push(renderer.compileAsync(m, camera, scene)); m.visible = false; }
-  }
-  renderer.setRenderTarget(null);
+  });
   showBand(band[0], band[1]);
   accents = a;
   await Promise.all(compiling).catch(() => {});
@@ -2010,7 +2013,11 @@ const inGround = (o) => { for (let p = o; p; p = p.parent) if (p === ground) ret
 iso.patchScene(scene, (o) => notIsolated.has(o) || inGround(o));
 grade.patchScene(scene); // and the colour grade, at the end of every material (and the sky)
 // the site plan may arrive after this point: give it the grade, then redraw the shadows
-sitePlanReady.then((s) => { if (!s) return; grade.patchScene(s); refreshShadows(); invalidate(300); });
+// (M4) new renderer: photoreal surface detail (js/materialsTSL.js), before the shaders are compiled
+// (opt-in with ?look=1: its noise nodes doubled the start-up shader build, 3.4 -> 6.8 s, for a ~1 % visible change)
+const look = GPU && qs.get("look") === "1" ? createLookTSL() : null;
+look?.apply(scene);
+sitePlanReady.then((s) => { if (!s) return; look?.apply(s); grade.patchScene(s); refreshShadows(); invalidate(300); });
 const floorViewObjects = [...unitMeshes, ...bands, cap, capMesh];
 const wasVisible = floorViewObjects.map((o) => o.visible);
 // (M2) new renderer: building a material's nodes is JavaScript work on the main thread, so before the first frame only
@@ -2021,11 +2028,12 @@ try {
   // (M2) the new renderer draws the scene into the post pass's own target (half float, 4x MSAA, depth + stencil), whose
   // pipelines differ from the screen's: compiling for the screen left every real pipeline to be built synchronously
   // in the first frame (~6 s). Compile for the target actually used.
-  renderer.setRenderTarget(compileTarget());
+  post?.prime(); // (M4: every pass's target allocated first, so the compiled pipelines match the real ones)
   sky.update(scene);
-  await renderer.compileAsync(scene, camera);
+  // the start-up view's passes: the scene pass and (AO tiers) its depth pass; the plan-cut pass waits for warmUpRest
+  const startPasses = compilePasses().slice(0, post?.quality.ao ? 2 : 1);
+  await Promise.all(startPasses.map((p) => compileFor(p, () => renderer.compileAsync(scene, camera))));
   sky.restore(scene);
-  renderer.setRenderTarget(null);
   mark("compiled");
   renderScene();
 } catch (e) { console.warn("shader pre-compile skipped", e); sky.restore(scene); }
@@ -2043,15 +2051,32 @@ function warmUpRest() {
       const batch = all.slice(i, i + 8); i += 8;
       const keep = batch.map((o) => { const k = []; for (let p = o; p; p = p.parent) k.push([p, p.visible]); return [k, o.frustumCulled]; });
       for (const o of batch) { for (let p = o; p; p = p.parent) p.visible = true; o.frustumCulled = false; }
-      for (const target of compileTargets()) { // (M3: both chains' targets)
-        renderer.setRenderTarget(target);
-        for (const o of batch) renderer.compileAsync(o, camera, scene).catch(() => {});
-      }
-      renderer.setRenderTarget(null);
+      // (M3/M4) the exterior passes; the plan-cut pass is primed by one real draw below (its compiles never matched)
+      for (const p of compilePasses()) if (!p.stencil || compilePasses().length === 1) compileFor(p, () => {
+        for (const o of batch) if (p.stencil || !o.material.stencilWrite) renderer.compileAsync(o, camera, scene).catch(() => {});
+      });
       batch.forEach((o, j) => { for (const [p, v] of keep[j][0]) p.visible = v; o.frustumCulled = keep[j][1]; });
     }
-    if (i < all.length) schedule(); else mark("warmUp");
+    if (i < all.length) schedule(); else { mark("warmUp"); schedule2(primeCutPass); }
   };
+  // (M4) The plan-cut chain (stencil target, section caps): neither compileAsync nor a plain render into its target
+  // matched what its own pipeline draws, which left ~170-220 pipelines to the first floor click (a ~3 s freeze). One
+  // draw through that chain itself, with every mesh shown and un-culled, builds exactly them (measured: first floor
+  // click 2 ms). It is followed by a normal frame in the same task: the browser only shows a canvas when the task
+  // ends, so this priming frame never reaches the screen.
+  function primeCutPass() {
+    if (!post || post.chains.length < 2) return;
+    const keep = all.map((o) => { const k = []; for (let p = o; p; p = p.parent) k.push([p, p.visible]); return [k, o.frustumCulled]; });
+    for (const o of all) { for (let p = o; p; p = p.parent) p.visible = true; o.frustumCulled = false; }
+    try { post.render(true); post.render(false); } // (both chains: the exterior one's AO depth pass had the same issue)
+    catch (e) { console.warn("cut pass warm-up", e); }
+    finally {
+      all.forEach((o, j) => { for (const [p, v] of keep[j][0]) p.visible = v; o.frustumCulled = keep[j][1]; });
+      renderScene();
+      mark("cutPrimed");
+    }
+  }
+  const schedule2 = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 100));
   const schedule = () => (window.requestIdleCallback ? requestIdleCallback(step, { timeout: 500 }) : setTimeout(step, 30));
   schedule();
 }
@@ -2059,7 +2084,7 @@ renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
-window.STIN = { THREE, post, tier, scene, camera, renderer, walker, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
+window.STIN = { THREE, post, tier, look, scene, camera, renderer, walker, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
   iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console
