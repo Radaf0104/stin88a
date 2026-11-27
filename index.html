@@ -44,7 +44,6 @@
   <link rel="modulepreload" href="js/config.js" />
   <link rel="modulepreload" href="js/gpu.js" />
   <link rel="modulepreload" href="js/materialsTSL.js" />
-  <link rel="modulepreload" href="js/foliage.js" />
   <link rel="modulepreload" href="js/lighting.js" />
   <link rel="modulepreload" href="js/massing.js" />
   <link rel="modulepreload" href="js/roomstyle.js" />
@@ -130,8 +129,9 @@
       </picture>
       <!-- loading bar: real progress (downloads counted here, then the start-up stages reported by js/main.js) -->
       <div class="hero-load" role="progressbar" aria-label="Loading the 3D model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="hero-head"><span class="hero-name">STIN 88A</span><b id="heroPct">0%</b></div>
         <div class="hero-bar"><i id="heroBar"></i></div>
-        <div class="hero-pct"><span id="heroLabel">Loading 3D model</span> <b id="heroPct">0%</b></div>
+        <div class="hero-pct"><span class="hero-dot"></span><span id="heroLabel">Loading 3D model</span></div>
       </div>
       <script>
         // Progress before js/main.js runs: each model / texture download that finishes moves the bar (up to 55 %);

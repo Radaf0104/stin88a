@@ -647,3 +647,15 @@ Client request: "add loading bar on the first page, or loading animation. then r
   - K.405 night: `#0d111c` with lights on; day: white.
   - No failed requests, no console errors.
 - Returning visitors may see old files for up to 10 minutes (max-age 600).
+
+## Trees removed, bigger loading screen (v6-webgpu, 2026-11-27)
+- **Client: "remove the trees"**:
+  - M5's procedural trees are no longer loaded: no `trees.json`, foliage textures or foliage shaders. The `createFoliage` import and the `js/foliage.js` preload are gone.
+  - The photographed lawn (M5) stays.
+  - `js/foliage.js` and `data/trees.json` stay in the repo unused, to bring the trees back if wanted.
+  - Checked: no tree requests, lawn textured, aerial and eye-level views without trees, no new console errors.
+- **Client: "make the loading screen bigger and more noticeable"**:
+  - The slim bar became a large dark glass card in the lower third: "STIN 88A", a big percentage (40 px; 32 px on phones), a 12 px glowing bar with a moving shine, and a pulsing dot next to "Loading 3D model".
+  - The bottom of the cover picture darkens behind it.
+  - Same real progress as before. Card and shade fade out with the picture; animations stop under reduced motion.
+  - Checked on desktop and phone (375×812): it reaches 100 % and fades; ready ~1.06 s.

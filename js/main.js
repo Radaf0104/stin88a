@@ -16,7 +16,6 @@ import { createIsolation } from "./isolate.js";
 import { createSpaces } from "./spaces.js";
 import { GPU, FORCE_WEBGL, TSL } from "./gpu.js";
 import { createLookTSL } from "./materialsTSL.js";
-import { createFoliage } from "./foliage.js";
 
 // ---------- text ----------
 const STR = {
@@ -663,21 +662,18 @@ const massingReady = createMassing({ parent: ground }).then((m) => {
   try { invalidate(300); } catch {} // (if it arrives before the render loop is set up, the first frame draws it anyway)
   return m;
 }).catch((e) => { console.warn("massing", e); return null; });
-// (M5) Trees (js/foliage.js) and a photographed lawn (CC0 ambientCG Grass004), once the site plan and massing are in.
-// Trees stand on lawn only, clear of the building, the neighbour blocks, roads / pads and the lawn in front of the
-// terrace facade (the hero view, like 3.jpg, keeps an open lawn with trees to the sides and behind). In `ground`, so
-// they come and go with the site in the floor / room views. ?trees=0 leaves them out (A/B).
-// The trees and the re-textured lawn are compiled (async, for every pass) before they are shown, so their shaders are
-// never built in the middle of a frame (new renderer: seconds of freeze; classic: ~0.6 s).
+// (M5) A photographed lawn (CC0 ambientCG Grass004), once the site plan and massing are in. It is compiled (async,
+// for every pass) before it is shown, so its shaders are never built in the middle of a frame.
+// (client, 2026-11-27: "remove the trees") M5's procedural trees are no longer loaded. js/foliage.js and the baked
+// places in data/trees.json stay in the repo, unused (createFoliage({ places, loadKtx, phone, anisotropy }) added
+// them to `ground`; see IMPROVEMENT_LOG.md, M5 and the UI round).
 async function compileQuietly(obj) {
   const all = [];
   for (const p of compilePasses()) compileFor(p, () => { if (p.stencil && compilePasses().length > 1) return; all.push(renderer.compileAsync(obj, camera, scene)); });
   await Promise.all(all).catch(() => {});
 }
-let foliage = null;
-const foliageReady = Promise.all([sitePlanReady, massingReady]).then(async ([site]) => {
-  if (!site || qs.get("trees") === "0" || !loadKtx) return null;
-  const t0 = performance.now();
+Promise.all([sitePlanReady, massingReady]).then(async ([site]) => {
+  if (!site || !loadKtx) return;
   const lawn = site.getObjectByName("siteplan_grass");
   // lawn: the photo + its normal map, tiled every 2.5 m on the site plan's metre UVs ((m + 256) / 512), toned to the
   // deeper olive of 3.jpg's lawn (#6e7338 average); the normal map lets the blades catch the low morning sun
@@ -697,23 +693,9 @@ const foliageReady = Promise.all([sitePlanReady, massingReady]).then(async ([sit
     const i = sitePlanMats.indexOf(old); if (i >= 0) sitePlanMats[i] = m;
     invalidate(300);
   }).catch((e) => console.warn("lawn", e)) : null;
-  // (UI round) the tree places are baked (data/trees.json, 17 KB): scatterTrees() in js/foliage.js once placed them on
-  // the lawns with raycasts against the site plan (clear of the building, the neighbour blocks, roads / pads and the
-  // lawn in front of the terrace facade). Baking drops those raycasts and the three-mesh-bvh library they needed.
-  const baked = await fetch("data/trees.json").then((r) => r.json());
-  const places = baked.places.map(([species, x, y, z, scale, turn, lean, r, g, b]) => ({ species, x, y, z, scale, turn, lean, tint: [r, g, b] }));
-  timings.treeScatter = Math.round(performance.now() - t0);
-  const f = createFoliage({ places, loadKtx, phone, anisotropy: TEX_ANISO });
-  for (const m of f.materials) grade.patch(m);
-  try { look?.apply(f.group); } catch {} // (look is declared further down; the trees may arrive first)
-  await f.ready; // textures in before the first compile, so the shaders are built once
-  await compileQuietly(f.group);
-  ground.add(f.group); foliage = f;
   await lawnReady;
   invalidate(300);
-  timings.trees = places.length;
-  return f;
-}).catch((e) => { console.warn("trees", e); return null; });
+}).catch((e) => console.warn("lawn", e));
 const cap = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
   color: 0x5d564f, roughness: 1, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
   stencilFail: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp, stencilZPass: THREE.ReplaceStencilOp,
