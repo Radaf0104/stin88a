@@ -328,6 +328,8 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
       }
       down.position.copy(c).setY(c.y - 0.35); // (just under the ceiling: a point light, so not right against it)
       const lt = active.toggles.find((t) => t.id === "lights"); lamp.position.copy(lt?.at ?? c).add(new THREE.Vector3(0, 0.25, 0));
+      // (client, 2026-11-27) the room's lights are on by default when it opens (the Lights button can still turn them off)
+      if (lt) lt.t = 1;
       lt?.apply(easeQuad(lt.v));
       renderDock(); writeHash();
     },

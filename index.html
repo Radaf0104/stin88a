@@ -90,7 +90,11 @@
       <div class="tag" id="tagline"></div>
     </header>
 
+    <!-- (client, 2026-11-27) Back: one step back (room -> level -> overview), outside the panels -->
+    <button id="backBtn" class="chip back-btn hidden"></button>
+
     <aside class="panel floors">
+      <button id="floorsHide" class="panel-hide">×</button>
       <button class="overview-btn" id="overviewBtn"></button>
       <div class="panel-title" data-i18n="floors"></div>
       <div id="floorList"></div>
@@ -99,6 +103,9 @@
     </aside>
 
     <section id="card" class="panel card hidden" aria-live="polite"></section>
+    <!-- hidden panels come back from these tabs -->
+    <button id="floorsTab" class="chip panel-tab floors-tab hidden"></button>
+    <button id="cardTab" class="chip panel-tab card-tab hidden"></button>
 
     <aside id="photoRail" class="photo-rail hidden" aria-label="Renders of this space"></aside>
 
@@ -110,7 +117,6 @@
     </div>
 
     <div class="toolbar">
-      <button id="infoBtn" class="chip" aria-pressed="false"></button>
       <button id="galleryBtn" class="chip"></button>
       <button id="dayNight" class="chip"></button>
       <button id="langBtn" class="chip"></button>

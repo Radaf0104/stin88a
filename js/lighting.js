@@ -20,15 +20,18 @@ export function createMoodLights(scene, count) {
   const anchors = [];
   let factor = 1, dirty = true;
   const last = new THREE.Vector3(Infinity, 0, 0);
-  const add = (pos, mood) => { anchors.push({ pos: pos.clone(), mood: MOODS[mood], d: 0 }); dirty = true; };
+  // owner: the room an anchor belongs to. (client, 2026-11-27) in the room view that room's own lamps (room centre and
+  // bathroom) are always the ones lit, whatever the camera does; they no longer follow the mouse cursor.
+  const add = (pos, mood, owner = null) => { anchors.push({ pos: pos.clone(), mood: MOODS[mood], d: 0, owner }); dirty = true; };
+  let lastOwner = null;
   // (round 26) lights lent out (a style room's downlight and lamp, js/roomstyle.js) skip the anchor placement until
   // they are handed back - so the scene keeps the same number of lights and no shader is rebuilt
   const held = new Set();
-  function update(focus) {
-    // the nearest lamps only change when the focus point moves (≥ 25 cm) or the lamp strength changes
-    if (!dirty && last.distanceToSquared(focus) < 0.0625) return;
-    dirty = false; last.copy(focus);
-    for (const a of anchors) a.d = a.pos.distanceToSquared(focus);
+  function update(focus, owner = null) {
+    // the nearest lamps only change when the focus point moves (≥ 25 cm), the room or the lamp strength changes
+    if (!dirty && owner === lastOwner && last.distanceToSquared(focus) < 0.0625) return;
+    dirty = false; last.copy(focus); lastOwner = owner;
+    for (const a of anchors) a.d = owner && a.owner === owner ? -1 : a.pos.distanceToSquared(focus); // the room's own first
     anchors.sort((a, b) => a.d - b.d);
     let i = 0;
     pool.forEach((l) => {

@@ -33,7 +33,7 @@ const STR = {
     hintInside: "Drag to look around", roomPhotos: "Room photos", seeAngle: "See this angle in 3D", back: "Back to 3D",
     time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", hq: "HQ", lite: "Lite",
     bath: "bathroom",
-    hideInfo: "◧ Hide info", showInfo: "◨ Show info",
+    hidePanel: "Hide", levelsTab: "☰ Levels", goBack: "← Back",
     massing: "▢ Massing", mapOn: "🌍 Map", mapOff: "🌿 Site plan",mapNoKey: "The real-world map needs a Google Maps API key: add googleMapsKey in js/config.js.",
   },
   id: {
@@ -50,7 +50,7 @@ const STR = {
     hintInside: "Geser untuk melihat sekeliling", roomPhotos: "Foto kamar", seeAngle: "Lihat sudut ini di 3D", back: "Kembali ke 3D",
     time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", hq: "HQ", lite: "Ringan",
     bath: "kamar mandi",
-    hideInfo: "◧ Sembunyikan info", showInfo: "◨ Tampilkan info",
+    hidePanel: "Sembunyikan", levelsTab: "☰ Lantai", goBack: "← Kembali",
     massing: "▢ Massa", mapOn: "🌍 Peta", mapOff: "🌿 Rencana tapak",mapNoKey: "Peta dunia nyata butuh API key Google Maps: isi googleMapsKey di js/config.js.",
   },
 };
@@ -180,7 +180,9 @@ const ui = {
 };
 
 const state = { floor: null, unit: null, hover: null, inside: null };
-let infoHidden = false;
+// (client, 2026-11-27) each panel can be hidden on its own (the levels / rooms panel with its ‹ button, the room card
+// with its ×) and comes back from a small tab; going back a step is the separate Back button
+let floorsHidden = false, cardHidden = false;
 // (UI round) Day / Night while inspecting a room: night = dim ambient, deep blue backdrop, lamps, downlight and LED
 // strips on (style rooms switch their lights on). Re-applied whenever the view or the time changes (renderUI).
 let lastRoomNight = null;
@@ -898,8 +900,8 @@ for (const u of units) {
     for (let x = b.min.x + 2; x <= b.max.x - 1; x += step)
       for (let z = b.min.z + 2; z <= b.max.z - 1; z += step) mood.add(new THREE.Vector3(x, fy + 2.5, z), moodName);
   } else {
-    mood.add(new THREE.Vector3(u.center.x, fy + 2.25, u.center.z), "bedroom");
-    if (u.bathCenter) mood.add(new THREE.Vector3(u.bathCenter.x, fy + 2.2, u.bathCenter.z), "bathroom");
+    mood.add(new THREE.Vector3(u.center.x, fy + 2.25, u.center.z), "bedroom", u);
+    if (u.bathCenter) mood.add(new THREE.Vector3(u.bathCenter.x, fy + 2.2, u.bathCenter.z), "bathroom", u);
   }
 }
 for (const lvl of new Set(units.filter((u) => u.kind !== "space").map((u) => u.level))) {
@@ -999,6 +1001,18 @@ const WHITE_BG = new THREE.Color(1.6, 1.6, 1.6); // > 1 so it stays pure white a
 const NIGHT_BG = new THREE.Color(0x0d111c);
 const roomNight = () => !!state.unit && env.current === "night";
 let isoK = 0, isoAnim = null, savedSky = null;
+// The lamps' strength. Floor views by day: they fade out with the outside (plain studio light). (client, 2026-11-27)
+// The room view: the room's own lamps (room centre + bathroom) are on by default, by day too (at night at full
+// strength, by day at ROOM_DAY_LAMPS so they read on the white studio light).
+const ROOM_DAY_LAMPS = 0.8;
+let lampF = -1;
+function updateLamps() {
+  try {
+    const tm = env.time ?? {}, night = env.current === "night";
+    const f = state.unit && !state.inside ? (night ? tm.lamps ?? 1 : Math.max(tm.lamps ?? 1, ROOM_DAY_LAMPS)) : (tm.lamps ?? 1) * (1 - isoK);
+    if (f !== lampF) { lampF = f; mood.setFactor(f); invalidate(200); }
+  } catch {} // (renderUI can run before isoK / mood exist)
+}
 function setIsoK(k) {
   if (k > 0 && !savedSky) savedSky = { bg: scene.background, intensity: scene.backgroundIntensity, fog: scene.fog?.density ?? 0 };
   isoK = k;
@@ -1008,8 +1022,7 @@ function setIsoK(k) {
   const tm = env.time ?? {};
   const night = roomNight();
   env.setPlainNight(night);
-  // the lamps: by day they fade out with the outside (plain studio light); a room at night keeps them on
-  mood.setFactor((tm.lamps ?? 1) * (night ? 1 : 1 - k));
+  updateLamps();
   if (bloomPass) bloomPass.enabled = k === 0;
   if (post) post.aoAmount.value = 1 - k; // (M3) the plain white views fade the AO out with the sky
   grade.enabled = k < 0.5; // plain white views: no grade (as before)
@@ -1159,6 +1172,7 @@ const planToWorld = (pts) => pts.map(([x, y]) => [x + root.position.x, -y + root
 function selectUnit(u) {
   if (state.inside || state.floor !== u.level) selectFloor(u.level, false);
   clearRoomView();
+  if (state.unit !== u) cardHidden = false; // a newly chosen room shows its card
   state.unit = u;
   const sp = spaces.unitSpace(u);
   // only this room: its outline grown by one wall thickness (0.15 m), so the neighbours' floors and walls stay out
@@ -1334,12 +1348,16 @@ function renderUI() {
   document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
   ui.overviewBtn.textContent = t("overview");
   ui.overviewBtn.classList.toggle("active", state.floor === null);
-  const infoOffered = state.floor !== null; // (a level or a room is selected)
-  if (!infoOffered) infoHidden = false;
-  document.body.classList.toggle("info-hidden", infoHidden);
-  $("infoBtn").style.display = infoOffered ? "" : "none";
-  $("infoBtn").textContent = t(infoHidden ? "showInfo" : "hideInfo");
-  $("infoBtn").setAttribute("aria-pressed", String(infoHidden));
+  document.body.classList.toggle("floors-hidden", floorsHidden);
+  $("floorsHide").setAttribute("aria-label", t("hidePanel")); $("floorsHide").title = t("hidePanel");
+  $("floorsTab").textContent = t("levelsTab");
+  $("floorsTab").classList.toggle("hidden", !floorsHidden || !!state.inside);
+  const cardFor = state.unit && !state.inside ? state.unit : null;
+  $("cardTab").textContent = cardFor ? "ⓘ " + cardFor.label : "";
+  $("cardTab").classList.toggle("hidden", !cardFor || !cardHidden);
+  $("backBtn").textContent = t("goBack");
+  $("backBtn").classList.toggle("hidden", state.floor === null || !!state.inside);
+  updateLamps();
   ui.floorList.innerHTML = "";
   for (const f of CONFIG.floors) {
     const rooms = units.filter((u) => u.level === f.level && u.kind !== "space");
@@ -1392,14 +1410,14 @@ function renderUI() {
 function showSpaceCard(u) {
   const floorLabel = L(CONFIG.floors.find((f) => f.level === u.level)?.label) ?? `L${u.level}`;
   ui.card.innerHTML = `
-    <button class="close" aria-label="${t("close")}">×</button>
+    <button class="close" aria-label="${t("hidePanel")}" title="${t("hidePanel")}">×</button>
     <h2>${L(u.space.label)}</h2>
     <div class="sub">${floorLabel} · ${u.area.toFixed(0)} m²</div>
     <p style="font-size:14px;line-height:1.5;margin:0 0 14px">${L(u.space.text) ?? ""}</p>
     <button class="btn" id="enterBtn" style="border:1px solid var(--panel-border)">${t("photos")}</button>
     ${u.space.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}`;
-  ui.card.classList.remove("hidden");
-  ui.card.querySelector(".close").onclick = () => selectFloor(u.level);
+  ui.card.classList.toggle("hidden", cardHidden);
+  ui.card.querySelector(".close").onclick = hideRoomCard;
   ui.card.querySelector("#enterBtn").onclick = () => openPhotosFor(u);
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
@@ -1412,7 +1430,7 @@ function showCard(u) {
   const canAsk = CONFIG.whatsapp && u.status !== "occupied";
   const note = u.note?.startsWith("Assumed") ? t("assumed") : u.note ? t("unnamed") : "";
   ui.card.innerHTML = `
-    <button class="close" aria-label="${t("close")}">×</button>
+    <button class="close" aria-label="${t("hidePanel")}" title="${t("hidePanel")}">×</button>
     <h2>${u.label}</h2>
     <div class="sub">${floorLabel} · ${L(type?.label) ?? u.type}</div>
     ${note ? `<div class="note">⚠ ${note}</div>` : ""}
@@ -1425,8 +1443,8 @@ function showCard(u) {
     <button class="btn primary" id="enterBtn">${t("roomPhotos")}</button>
     ${type?.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}
     ${canAsk ? `<a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(t("wa", u.label))}">${t("ask")}</a>` : ""}`;
-  ui.card.classList.remove("hidden");
-  ui.card.querySelector(".close").onclick = () => selectFloor(u.level); // back to the whole floor
+  ui.card.classList.toggle("hidden", cardHidden);
+  ui.card.querySelector(".close").onclick = hideRoomCard; // (client, 2026-11-27: × hides the card; Back goes back)
   ui.card.querySelector("#enterBtn").onclick = () => openRoomPhotos(u);
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
@@ -1434,9 +1452,14 @@ function showCard(u) {
 function hideCard() { ui.card.classList.add("hidden"); }
 
 ui.overviewBtn.onclick = () => selectFloor(null);
-// (UI round) Hide / show the information panels (levels and rooms list, room card) while choosing rooms, so the 3D view
-// is unobstructed - on phones especially. Offered once a level or room is selected; the overview always shows them.
-$("infoBtn").onclick = () => { infoHidden = !infoHidden; renderUI(); };
+// (client, 2026-11-27) "kedua panel ini bisa di sembunyikan. tombol x berarti hide, bukan kembali. buat tombol kembali
+// diluar dari panel": the two panels hide on their own and come back from a tab; Back (outside the panels) goes one
+// step back: room -> its level -> building overview
+function hideRoomCard() { cardHidden = true; renderUI(); }
+$("cardTab").onclick = () => { cardHidden = false; renderUI(); };
+$("floorsHide").onclick = () => { floorsHidden = true; renderUI(); };
+$("floorsTab").onclick = () => { floorsHidden = false; renderUI(); };
+$("backBtn").onclick = () => { if (state.inside) return; if (state.unit) selectFloor(state.unit.level); else if (state.floor !== null) selectFloor(null); };
 ui.langBtn.onclick = () => { lang = lang === "en" ? "id" : "en"; try { localStorage.setItem("stin-lang", lang); } catch {} renderUI(); };
 ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); // golden hour was removed: day <-> night
 // (the "Map" and "Massing" buttons were removed at the client's request, 2026-11-26: the site plan and the massing are
@@ -1460,7 +1483,7 @@ function setTime(name) {
   if (map.on) scene.fog = null;
   landscape.setNight(name === "night");
   document.body.classList.toggle("night", name === "night");
-  mood.setFactor(tm.lamps);
+  lampF = -1; updateLamps();
   setLampGlow(0.6 + tm.glow * 1.4);
   accents?.setGlow(tm.glow ?? 0); // (round 22) plinth / shelf LEDs: pale by day, warm at golden hour and night
   for (const m of allMaterials()) if (m.userData.glass) { m.emissive?.setHex(0xffb066); m.emissiveIntensity = tm.glow * 0.12; }
@@ -1573,24 +1596,11 @@ canvas.addEventListener("pointermove", (e) => {
     ui.tooltip.classList.remove("hidden");
   } else ui.tooltip.classList.add("hidden");
 });
-canvas.addEventListener("pointerleave", () => { ui.tooltip.classList.add("hidden"); moodFocus = null; });
+canvas.addEventListener("pointerleave", () => { ui.tooltip.classList.add("hidden"); });
 // style rooms: hover outline + tooltip with the action ("Open the entry door") over their interactive objects
 canvas.addEventListener("pointermove", (e) => {
   if (roomView && roomStyle?.active && e.pointerType === "mouse" && !state.inside) roomStyle.hover(e, clipPlane.constant);
 });
-// Room lights switch on around the point under the mouse (desktop). Ignores anything above the floor cut.
-let moodFocus = null, lastMove = null;
-canvas.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") lastMove = e; });
-function updateMoodFocus() {
-  if (!lastMove || state.inside) return;
-  const r = canvas.getBoundingClientRect();
-  ndc.set(((lastMove.clientX - r.left) / r.width) * 2 - 1, -((lastMove.clientY - r.top) / r.height) * 2 + 1);
-  ray.setFromCamera(ndc, camera);
-  // (the room boxes under the cursor: cheap enough for every mouse move without a collision tree)
-  const hit = ray.intersectObjects(unitMeshes, false).find((h) => h.point.y <= clipPlane.constant + 0.01);
-  moodFocus = hit ? hit.point : null;
-  lastMove = null;
-}
 canvas.addEventListener("pointerup", (e) => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
   if (roomClick(e)) return; // room view: TV on / off, doors open / shut
@@ -1800,9 +1810,9 @@ function frame(now) {
   if (massing && massing.group.visible !== (isoK < 0.5)) { massing.group.visible = isoK < 0.5; invalidate(100); }
   landscape.tick(now / 1000);
   roomGlow.visible = !state.inside && state.floor === null;
-  // mood lights: around you when walking/inside; around the mouse cursor (desktop) or screen centre otherwise
-  updateMoodFocus();
-  mood.update(state.inside ? camera.position : moodFocus ?? controls.target);
+  // mood lights: around you inside a room; the chosen room's own lamps in the room view; around the view's centre
+  // otherwise. (client, 2026-11-27: they no longer follow the mouse cursor)
+  mood.update(state.inside ? camera.position : state.unit ? state.unit.center : controls.target, state.inside ? null : state.unit);
   const aoMode = state.inside ? "in" : "out";
   env.setInside(aoMode === "in");
   if (composer) {

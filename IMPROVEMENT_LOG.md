@@ -659,3 +659,23 @@ Client request: "add loading bar on the first page, or loading animation. then r
   - The bottom of the cover picture darkens behind it.
   - Same real progress as before. Card and shade fade out with the picture; animations stop under reduced motion.
   - Checked on desktop and phone (375×812): it reaches 100 % and fades; ready ~1.06 s.
+
+## Panels, Back button, room lights (v6-webgpu, 2026-11-27)
+Client (with screenshots of the room card, the levels panel and K.305 at night, with the room centre and the bathroom marked): "kedua panel ini bisa di sembunyikan. tombol x berarti hide, bukan kembali. buat tombol kembali diluar dari panel. saat melihat detail kamar, nyalakan lampu secara automatis di gambar 3 (tengah kamar) secara default. jika kursor bergerak jangan nyalakan atau matikan lampu mengikuti kursor lagi"
+- **Both panels hide on their own**:
+  - The levels / rooms panel has a × in its corner (on phones, at the front of the bottom strip).
+  - The room card's × now only hides the card; the room view stays.
+  - A hidden panel comes back from a small tab in its place: "☰ Levels" and "ⓘ K.305".
+  - A newly chosen room shows its card again.
+  - The earlier single "Hide info" chip is replaced by these.
+- **Back button outside the panels**: "← Back" / "← Kembali" goes one step back (room → its level → building overview). It sits top centre on desktop and top right on phones, and is hidden in the overview and inside a room.
+- **Room lights on by default** in the room view:
+  - The mood-light anchors now know their room. In the room view, that room's own lamps (room centre and bathroom) always take lights from the pool.
+  - By day too: lamp strength max(day lamps, 0.8) on the white view; at night full strength.
+  - Style rooms (K.401/405/407/413/416) also open with their Lights toggle on; the Lights button can still turn them off.
+- **No cursor-driven lights**: the lights no longer follow the mouse cursor (`updateMoodFocus` removed). Floor views use the view's centre; inside a room, the camera position. Clicking a style room's lamp to toggle it still works.
+- Levels panel 220 → 240 px wide, so "Building overview" fits beside the ×.
+- **Checked** (local, classic):
+  - Desktop and phone (375×812): K.305 day and night with room centre and bathroom lit.
+  - × hides and the tab restores, for both panels; Back room → level → overview.
+  - No new console errors.
