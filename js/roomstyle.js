@@ -67,7 +67,7 @@ function keyFor(o, name, inBath) {
 }
 const easeQuad = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
-export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch, onLights }) {
+export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch, onLights, borrowLights, releaseLights }) {
   const tex = makeTextures(renderer);
   const rooms = new Map(); // label -> { u, style, mats: {key: material}, meshes, emissive: [{m, base}], curtains, toggles }
   const unitByLabel = new Map(units.map((u) => [u.label, u]));
@@ -181,9 +181,11 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
   function addToggle(R, t) { t.v = 0; t.t = 0; R.toggles.push(t); return t; }
   // one warm downlight + one lamp light, shared by the style rooms (moved into the room being shown, so the number of
   // lights in the scene never changes and no shader has to be rebuilt)
-  const down = new THREE.SpotLight(0xffc98f, 0, 6, 0.9, 0.8, 2); down.castShadow = false;
-  const lamp = new THREE.PointLight(0xffd07d, 0, 4, 2);
-  scene.add(down, down.target, lamp);
+  // (round 26) borrowed from the mood-light pool while a style room is shown (js/lighting.js hold / release): two
+  // fewer lights in every shader of the site. Without a pool (borrowLights not given) the room keeps its own two.
+  let down = null, lamp = null;
+  const ownLights = () => { const d = new THREE.PointLight(0xffc98f, 0, 6, 2), l = new THREE.PointLight(0xffd07d, 0, 4, 2); scene.add(d, l); return [d, l]; };
+  const own = borrowLights ? null : ownLights();
   for (const R of rooms.values()) {
     const u = R.u, floorY = levelY[u.level];
     // doors (entry, bathroom, balcony pair)
@@ -202,7 +204,7 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
         at: R.lamps[0] ? lampAt.clone() : u.center.clone().setY(floorY + 1.2),
         apply: (e) => {
           for (const m of R.emissive) m.emissiveIntensity = m.userData.base * (0.15 + 2.3 * e);
-          if (active === R) { down.intensity = 6 * e; lamp.intensity = 0.7 * e; }
+          if (active === R && down) { down.intensity = 4.5 * e; lamp.intensity = 0.7 * e; } // (point downlight: 4.5 ~ the old 6 cd spot)
           onLights?.(u.label, e); // (round 22) the room's accent LEDs (js/accents.js)
         } });
     }
@@ -283,15 +285,26 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
       active = rooms.get(u.label) ?? null;
       if (!active) return;
       addTv(active, tv);
-      const b = new THREE.Box3(); for (const m of active.meshes) if (m.userData.surface === "ceiling") b.expandByObject(m);
-      const c = b.isEmpty() ? u.center.clone().setY(levelY[u.level] + 2.6) : b.getCenter(new THREE.Vector3()).setY(b.min.y - 0.05);
-      down.position.copy(c); down.target.position.copy(c).setY(levelY[u.level]); down.target.updateMatrixWorld();
+      // (round 26) from the room's own box: the merged "ceiling" mesh also holds pieces of other storeys (K.405's spans
+      // 11.8-15.2 m), which had put the downlight under the room's floor
+      // (over the bed: the room's centre includes the bathroom, which put the light against the bathroom wall)
+      const bed = new THREE.Box3(); for (const m of active.meshes) if (m.userData.kind === "bed") bed.expandByObject(m);
+      const c = (bed.isEmpty() ? u.center.clone() : bed.getCenter(new THREE.Vector3())).setY((u.box?.max.y ?? levelY[u.level] + 2.6) - 0.05);
+      if (!down) {
+        [down, lamp] = own ?? borrowLights(2);
+        down.color.setHex(0xffc98f); down.distance = 6; down.decay = 2;
+        lamp.color.setHex(0xffd07d); lamp.distance = 4; lamp.decay = 2;
+      }
+      down.position.copy(c).setY(c.y - 0.35); // (just under the ceiling: a point light, so not right against it)
       const lt = active.toggles.find((t) => t.id === "lights"); lamp.position.copy(lt?.at ?? c).add(new THREE.Vector3(0, 0.25, 0));
       lt?.apply(easeQuad(lt.v));
       renderDock(); writeHash();
     },
     leave() {
-      if (active) { down.intensity = 0; lamp.intensity = 0; }
+      if (down) {
+        down.intensity = 0; lamp.intensity = 0;
+        if (!own) { releaseLights([down, lamp]); down = lamp = null; } // (back to the mood pool)
+      }
       active = null; hovered = null; setOutline(null); hotLayer.innerHTML = ""; renderDock();
       try { if (/^#K\d{3}-/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search); } catch {}
     },

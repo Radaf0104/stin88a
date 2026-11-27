@@ -1894,7 +1894,8 @@ let roomStyle = null;
 try {
   if (USE_GLB) roomStyle = createRoomStyle({ scene, camera, renderer, objects: levelObjects, spaces, units, levelY, planToWorld, inPoly,
     rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); },
-    onLights: (label, e) => { accentRoomK.set(label, 0.15 + 0.85 * e); accents?.setRoom(label, 0.15 + 0.85 * e); } });
+    onLights: (label, e) => { accentRoomK.set(label, 0.15 + 0.85 * e); accents?.setRoom(label, 0.15 + 0.85 * e); },
+    borrowLights: (n) => mood.hold(n), releaseLights: (ls) => mood.release(ls) }); // (round 26: no lights of its own)
 } catch (e) { console.warn("room styles", e); }
 async function buildAccents() {
   const a = await createAccents({ root, levelObjects });

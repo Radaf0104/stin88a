@@ -21,14 +21,19 @@ export function createMoodLights(scene, count) {
   let factor = 1, dirty = true;
   const last = new THREE.Vector3(Infinity, 0, 0);
   const add = (pos, mood) => { anchors.push({ pos: pos.clone(), mood: MOODS[mood], d: 0 }); dirty = true; };
+  // (round 26) lights lent out (a style room's downlight and lamp, js/roomstyle.js) skip the anchor placement until
+  // they are handed back - so the scene keeps the same number of lights and no shader is rebuilt
+  const held = new Set();
   function update(focus) {
     // the nearest lamps only change when the focus point moves (≥ 25 cm) or the lamp strength changes
     if (!dirty && last.distanceToSquared(focus) < 0.0625) return;
     dirty = false; last.copy(focus);
     for (const a of anchors) a.d = a.pos.distanceToSquared(focus);
     anchors.sort((a, b) => a.d - b.d);
-    pool.forEach((l, i) => {
-      const a = anchors[i];
+    let i = 0;
+    pool.forEach((l) => {
+      if (held.has(l)) return;
+      const a = anchors[i++];
       if (!a || a.d > 30 * 30) { l.intensity = 0; return; }
       l.position.copy(a.pos).setY(a.pos.y + 0.3); // up near the ceiling: no hot spots on walls at eye level
       l.color.setHex(a.mood.color);
@@ -36,7 +41,9 @@ export function createMoodLights(scene, count) {
       l.distance = a.mood === MOODS.communal || a.mood === MOODS.villa ? 10 : 6;
     });
   }
-  return { add, update, anchors, setFactor: (f) => { factor = f; dirty = true; }, clear: () => { anchors.length = 0; dirty = true; } };
+  return { add, update, anchors, setFactor: (f) => { factor = f; dirty = true; }, clear: () => { anchors.length = 0; dirty = true; },
+    hold(n) { const ls = pool.filter((l) => !held.has(l)).slice(-n); ls.forEach((l) => held.add(l)); return ls; },
+    release(ls) { for (const l of ls) { held.delete(l); l.intensity = 0; } dirty = true; } };
 }
 
 // Daylight through the window of the room you're in: one wide, fully soft spot light standing just outside the
