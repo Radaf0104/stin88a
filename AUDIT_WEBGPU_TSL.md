@@ -264,6 +264,28 @@ Auto-pick from a 1-second benchmark on the loading screen, with a manual selecto
 6. **M5 – landscape and atmosphere:** trees, terrain ring, skyline, aerial fog, aerial presets.
 7. **Brief 2:** shadow PCSS/CSM, water `reflector()`, foliage SSS + wind, BRDF calibration table, DoF + tier UI.
 
+### 6.6 Version and asset watch-outs (from the research agent's follow-up notes)
+
+Details are in `research/tsl-patterns-assets.md` and `research/vegetation-haze-backdrop.md`. The aerial addendum rows A1–A9 are in `research/gap_matrix_webgpu.md`.
+
+- **Pin one three.js release and test the WebGL 2 fallback with `forceWebGL`.** Several TSL APIs changed between r181 and r186:
+  - `PostProcessing` was renamed to `RenderPipeline` (r183).
+  - `PCFSoftShadowMap` was removed (r186).
+  - `SkyMesh` lost `turbidity`/`up`.
+
+  Code from older examples will not run unchanged.
+- **InstancedMesh2 and octahedral-impostor libraries are not confirmed to work with WebGPU.** They also patch shaders in the `onBeforeCompile` style, which the brief forbids. Prototype with core `InstancedMesh` (one per LOD) first.
+- **Shadows:**
+  - Trees should not cast into the sun shadow map; use blob/AO decals under them.
+  - The building keeps the real shadows (CSM, 2–3 cascades).
+  - Brief 2's "dappled foliage shadow" is therefore limited to the Ultra tier and a few hero trees near the camera.
+- **Haze:** a height + distance `fogNode` whose colour equals the sky at the horizon (≈ #C8D3DA).
+- **Assets:**
+  - Don't ship the three.js example water normals; they have no stated licence. Use ambientCG CC0 instead.
+  - Poly Haven has CC0 trees, tropical plants and `palm_bark`, but no palm model.
+  - Quaternius/Kenney packs need a per-pack licence check, because some are not CC0.
+  - 8.webp carries a studio watermark: use it as a mood reference only.
+
 ---
 
 ## 7. Brief 2: five-pillar audit (short)
