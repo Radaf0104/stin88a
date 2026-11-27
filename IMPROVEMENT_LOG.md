@@ -365,3 +365,12 @@ Checked each item of the new list (research\v5-perf-color-ideas.md, "Round 3 aud
   - Item 1, plaster / grass simplify: tried in an earlier round, no gain.
   - Item 2, the 0-intensity spot + point: they are the style rooms' switchable room lights. Removing them changes the light count, so every shader rebuilds when a switch is used, and round 20 measured no frame cost from them.
   - Item 3, glTF JSON 2.29 MB: it gzips to ~145 KB, so ~2 % of the download on the wire; left for later.
+
+## Round 25 — research round 3, item 1 re-tested with numbers: lawn simplified, walls left
+- **Walls (not done, now measured)**: the exact recipe proposed (weld, then simplify ratio .3, error .0005, borders locked) on `L1–L4_plaster_cream` in the packed files gives 107,610 → 100,982 triangles (−6 %); with borders unlocked −8 %. These walls are many small flat pieces around openings, with nearly every vertex on a piece border. The triangles are genuinely needed, not tessellation noise, so no change. Unlocking borders would also risk cracks.
+- **Lawn (done)**: the site plan lawn is smooth toposolid terrain. `tools/build-siteplan.mjs` now simplifies grass and soil to within ~2 cm, borders locked, so the edges along roads, pads and retaining walls stay exactly in place. Grass 26,277 → 3,267 triangles (−88 %); SITEPLAN.bin 154 → 45 KB. The site plan was built from stin88a-v4/source/revit/siteplan_revit.json (`--in`), as in round 18.
+  - Overview 586k → 563k triangles, 331 calls.
+  - Hero unchanged at 64/145/232, RGB 130/136/130.
+  - The lawn close-up from round 18's camera matches (tools/out/r25_site_after.jpg against r18_site.jpg). No console errors.
+- **Items 2, 3, 5**: nothing new beyond round 24's notes. Item 2: the 0-intensity lights are the style rooms' switchable lights, so removing them means a shader rebuild on every switch. Item 3: JSON gzips to ~145 KB. Item 5: collision done in round 24; shaders already compile with compileAsync while the loading screen shows. The research file has no further items.
+- **Timing**: start-up wasn't re-taken. The machine is still busy (level setup 1.31 s against ~0.6 s when quiet), so ready / BVH / shader times now aren't comparable with rounds 23–24.

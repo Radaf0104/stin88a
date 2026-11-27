@@ -7,8 +7,8 @@
 // textures), shared vertices welded, smooth normals on the terrain, meshopt compressed - a few hundred KB.
 import { Document, NodeIO } from "@gltf-transform/core";
 import { EXTMeshoptCompression, ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { weld, quantize, reorder, prune } from "@gltf-transform/functions";
-import { MeshoptEncoder } from "meshoptimizer";
+import { weld, quantize, reorder, prune, simplifyPrimitive } from "@gltf-transform/functions";
+import { MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
 import { readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,7 +74,20 @@ for (const [t, M] of Object.entries(merged)) {
   tris += idx.length / 3;
 }
 await MeshoptEncoder.ready;
-await doc.transform(weld(), reorder({ encoder: MeshoptEncoder }), quantize({ quantizeTexcoord: 16 }), prune({ keepAttributes: true })); // (keep the UVs: the textures are added on the website)
+await doc.transform(weld());
+// (round 25) the lawn and soil are smooth terrain from the toposolids: simplified to within ~2 cm, borders locked (so
+// their edges along the roads, pads and walls stay exactly where they were)
+await MeshoptSimplifier.ready;
+for (const n of scene.listChildren()) {
+  if (!/grass|soil/.test(n.getExtras().surface ?? "")) continue;
+  for (const p of n.getMesh().listPrimitives()) {
+    const a = p.getAttribute("POSITION"), mn = a.getMin([]), mx = a.getMax([]), r = Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2;
+    const before = p.getIndices().getCount() / 3;
+    simplifyPrimitive(p, { simplifier: MeshoptSimplifier, ratio: 0, error: 0.02 / r, lockBorder: true });
+    console.log(`  ${n.getExtras().surface}: ${before} -> ${p.getIndices().getCount() / 3} triangles`);
+  }
+}
+await doc.transform(reorder({ encoder: MeshoptEncoder }), quantize({ quantizeTexcoord: 16 }), prune({ keepAttributes: true })); // (keep the UVs: the textures are added on the website)
 doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
 buf.setURI("SITEPLAN.bin");
 await new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "meshopt.encoder": MeshoptEncoder }).write(OUT, doc);
