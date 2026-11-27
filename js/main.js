@@ -8,7 +8,8 @@ import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
 import { createWalker } from "./walk.js";
 import { createMassing } from "./massing.js";
-import { createRoomStyle } from "./roomstyle.js";
+import { createRoomStyle, STYLE_ROOMS } from "./roomstyle.js";
+import { createAccents } from "./accents.js";
 import { makeTextures, tileRepeat } from "./proctex.js";
 import { createMap } from "./map.js";
 import { createGrade, createSky } from "./grade.js";
@@ -327,6 +328,7 @@ const FACADE_TINT = {
 // (round 19) texture density: the teak deck (balconies, and the corridor / communal floors) tiled every ~1.3 m, so its
 // knots read ~25 cm wide at eye level. x2.5 = real-sized grain. Same images (shared source), only the UV scale.
 const TEX_DENSITY = { M_teak_deck: 2.5 };
+let accents = null; // (round 22) js/accents.js - set once the levels are in
 // a copy of a material whose texture lookups move by a per-instance amount (0..1 of the texture) on instanced draws
 function jitterInstanceUVs(m) {
   const c = m.clone();
@@ -882,6 +884,7 @@ function setIsoK(k) {
   if (k > 0 && !savedSky) savedSky = { bg: scene.background, intensity: scene.backgroundIntensity, fog: scene.fog?.density ?? 0 };
   isoK = k;
   iso.fade = k;
+  accents?.setPlain(k);
   env.setPlain(k);
   const tm = env.time ?? {};
   mood.setFactor((tm.lamps ?? 1) * (1 - k));
@@ -1347,6 +1350,7 @@ function setTime(name) {
   document.body.classList.toggle("night", name === "night");
   mood.setFactor(tm.lamps);
   setLampGlow(0.6 + tm.glow * 1.4);
+  accents?.setGlow(tm.glow ?? 0); // (round 22) plinth / shelf LEDs: pale by day, warm at golden hour and night
   for (const m of allMaterials()) if (m.userData.glass) { m.emissive?.setHex(0xffb066); m.emissiveIntensity = tm.glow * 0.12; }
   roomGlowMat.color.setHex(0xffc58a).multiplyScalar(tm.roomGlow ?? 0.5);
   grade.set(tm.grade);
@@ -1875,11 +1879,16 @@ env.set("day", radius);
 // in frame(): the Level 1 view keeps the ground and roads, other floor views hide them).
 // Style rooms (js/roomstyle.js): K.401/405/407/413/416 get their own materials and interactions; created before the
 // isolation / grade patches below, so their new materials get both
+// (round 22) room accents: contact shadows, plinth and shelf LEDs in every guest room (js/accents.js). Added before
+// the isolation / grade patches below, so they are cut and graded like everything else.
+if (USE_GLB) try { accents = await createAccents({ root, levelObjects }); } catch (e) { console.warn("room accents", e); }
 let roomStyle = null;
 try {
   if (USE_GLB) roomStyle = createRoomStyle({ scene, camera, renderer, objects: levelObjects, spaces, units, levelY, planToWorld, inPoly,
-    rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); } });
+    rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); },
+    onLights: (label, e) => accents?.setRoom(label, 0.15 + 0.85 * e) }); // (the style rooms' light switch dims their LEDs too)
 } catch (e) { console.warn("room styles", e); }
+for (const label of Object.keys(STYLE_ROOMS)) accents?.setRoom(label, 0.15); // (their lights start switched off)
 const notIsolated = new Set([...unitMeshes, ...bands, roomGlow, capMesh]);
 const inGround = (o) => { for (let p = o; p; p = p.parent) if (p === ground) return true; return false; };
 iso.patchScene(scene, (o) => notIsolated.has(o) || inGround(o));
@@ -1901,7 +1910,7 @@ renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
-window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
+window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
   iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console

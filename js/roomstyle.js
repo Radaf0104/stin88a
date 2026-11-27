@@ -67,7 +67,7 @@ function keyFor(o, name, inBath) {
 }
 const easeQuad = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
-export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch }) {
+export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch, onLights }) {
   const tex = makeTextures(renderer);
   const rooms = new Map(); // label -> { u, style, mats: {key: material}, meshes, emissive: [{m, base}], curtains, toggles }
   const unitByLabel = new Map(units.map((u) => [u.label, u]));
@@ -203,6 +203,7 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
         apply: (e) => {
           for (const m of R.emissive) m.emissiveIntensity = m.userData.base * (0.15 + 2.3 * e);
           if (active === R) { down.intensity = 6 * e; lamp.intensity = 0.7 * e; }
+          onLights?.(u.label, e); // (round 22) the room's accent LEDs (js/accents.js)
         } });
     }
     // curtains: drawn across the glass door they hang beside (scaled from their outer end; the mesh itself is unchanged)

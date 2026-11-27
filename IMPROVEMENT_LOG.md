@@ -332,3 +332,15 @@ Checked each audit claim before acting:
 - **Item 4**: nothing to change. The 6 copies each of lamp_shade / lamp_globe / led_warm are per style room by design (roomstyle.js clones them so each room's light switch lights only that room). The unnamed materials are the hidden unit hover volumes. Shaders already pre-compile with compileAsync.
 - **Item 5** (LED strips, lit niche, contact-shadow decals) adds new geometry to the template rooms, which the standing rule doesn't allow (materials / textures / optimization / interactions only). Asked mastercontrol; not done.
 - Measured: hero 65/145/232, RGB 130/136/130 (unchanged); 369 calls (+1), 735k triangles (same), 31 programs, ready 1.18 s.
+
+## Round 22 — research item 5: room accents (LED lines, lit niches, contact shadows)
+Approved by the user ("Yes, add them", relayed by mastercontrol on 2026-11-27). Existing furniture keeps its exact size, place and shape: these are separate, thin pieces.
+- **Data**: `tools/build-accents.mjs` reads the raw Blender export (stin88a-v4/source/glb_raw, one node per object, the template rooms already copied into every room by 06t). It writes `data/room_accents.json` (17.7 KB) for 45 rooms:
+  - 138 **contact shadows**, under the bed and every piece of floor-standing casework (footprint + 12 cm fall-off);
+  - 51 **plinth LEDs**, along the room-facing foot of every full-height unit (wardrobe / shelving wall), each with a warm floor wash;
+  - 240 **lit-niche LEDs**, under the open shelves of those units (shelf undersides 0.9–2.4 m up). They run along the straight back edge, because the shelf fronts are curved and a front line overshot them (first try, fixed).
+  - Overlapping casework nodes produced each line twice; de-duplicated.
+- **Site**: `js/accents.js` draws one instanced mesh each per level for shadows, LED lines and washes (shared materials, 12 draws in all). The shadow fall-off is computed in the shader from each instance's size, so it stays 12 cm whatever the piece. LEDs are a pale diffuser by day (0.85) and warm when lit: + 1.6 × glow (time of day: day 0, golden 0.4, night 1), at least 0.6 in the isolated room / floor / walk views where the time of day doesn't show. Floor washes appear only when lit. The style rooms' light switch dims their LEDs too (`onLights` hook in roomstyle.js; they start "off" at 0.15 like their lamps). Hidden in the building overview like the other small dressing. The headboard-top LED already existed (06b) and is unchanged.
+- **Measured**: overview unchanged (369 calls, 735,348 triangles). The floor 4 view adds 3 calls and 1.5k triangles. Hero 61/145/231, RGB 129/135/129 in this browser session, identical with the accents hidden (the earlier 65 was a different browser session). Ready 1.38 s (was ~1.18 s): 3 new shader programs compile at start-up. The accents JSON is preloaded (arrives at 21 ms). No console errors.
+- Renders: tools/out/r22_K405b_before.jpg / r22_K405b_after.jpg (shelf LEDs, wardrobe contact shadow), r22_K405_before.jpg / r22_K405_after.jpg (bed contact shadow).
+- `STIN.accents` debug handle: `setRoom(label, k)`, `setGlow(g)`, `setPlain(k)`.
