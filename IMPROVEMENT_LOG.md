@@ -401,3 +401,10 @@ All measured on the current build; each item tried or checked and left out with 
   - Room brightness and colour: K.405 entrance mean RGB 212/196/181 before and after; back view 209/192/175 → 212/195/177.
   - Frame time, K.405 walk view: 6.1–6.9 ms with the new normal maps, 5.9–6.6 ms without. Within noise, so no texture was dropped.
 - **Looks**: the veneer has a natural oak cathedral grain instead of procedural stripes, and the floor reads as laminate boards (tools/out/r28_K405b_after.jpg against r22_K405b_after.jpg). Linen and boucle are subtle (r28_K413_after.jpg).
+
+## Published: cebeb71 live (2026-11-27), user-approved ("Yes, both")
+- Pushed `v5-glb-site` to `origin/main` as a fast-forward (`94e0ddf..cebeb71`, 29 commits, no force). GitHub Pages served the new build after ~40 s. Rollback tag `v5-live-94e0ddf` is unchanged.
+- Pre-publish check (local, committed build): loading fade, overview, Level 1 ground, pad-1 auto-hide (hidden on render cameras 3-4), the 5 style rooms with their toggles, all 54 gallery images and thumbnails present, every request 200, no console errors.
+- Live, first visit (browser cache refreshed): 115 → 104 files, 12.98 → 11.0 MB compressed (24.1 → 19.8 MB decoded), ready 5.0 → 1.9 s in the built-in browser. Hero 65/145/232, RGB 130/136/130. The CC0 set (8 files, 576 KB) loads on opening K.405. No console errors.
+- Note: returning visitors may run a mix of old and new files for up to 10 minutes (GitHub Pages caches for max-age 600).
+- Push notification sent: "STIN 88A site updated live".
