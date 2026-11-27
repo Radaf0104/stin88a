@@ -421,3 +421,14 @@ First milestone of the WebGPU/TSL plan (AUDIT_WEBGPU_TSL.md §6.5). Backup tag `
 - **Colour, hero camera**: p5/p50/p95 49/127/240 (live 34/81/210 from the same camera), mean RGB 124/133/127. Side by side with 3.jpg: tools/out/m1_compare.jpg.
 - **Checks**: floor 2, unit K.405, back to the overview, golden, night: no console errors. Walk mode didn't start from the scripted check, so it is untested by script (its code path is unchanged; the lens is off while walking).
 - Not published.
+
+## Published: M1 live as 9a151f2 (2026-11-27), user-approved ("Publish M1 first")
+- Pre-publish fix: portrait screens (phones) keep the aerial overview as the first view. At eye level a 48 m facade was cut off and tiny on a 375×812 screen.
+- Checks before the push:
+  - Walk mode (floor 4, stairs start): enters and exits, lens off while walking.
+  - Phone (375×812): aerial first view, new colours.
+  - Floor, unit, golden and night views.
+  - No console errors.
+- Pushed `v6-webgpu` to `origin/main` as a fast-forward (`cebeb71..9a151f2`, no force). Rollback tag `v5-live-cebeb71` was pushed first; `v5-live-94e0ddf` is unchanged. Pages served it after ~40 s.
+- Live check (cache refreshed): eye-level first view at (−2, 3.8, 41.7), environment 0.35, sun 6.0, every request OK, no console errors. Returning visitors may see old files for up to 10 minutes (max-age 600).
+- Push notification sent.
