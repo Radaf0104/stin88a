@@ -111,6 +111,7 @@
     </div>
 
     <div class="toolbar">
+      <button id="infoBtn" class="chip" aria-pressed="false"></button>
       <button id="galleryBtn" class="chip"></button>
       <button id="dayNight" class="chip"></button>
       <button id="langBtn" class="chip"></button>
@@ -127,6 +128,33 @@
         <source type="image/webp" srcset="images/landing/hero-1200.webp 1200w, images/landing/hero-2000.webp 2000w" sizes="100vw" />
         <img id="heroImg" src="images/landing/hero-2000.jpg" srcset="images/landing/hero-1200.jpg 1200w, images/landing/hero-2000.jpg 2000w" sizes="100vw" width="2000" height="1116" fetchpriority="high" decoding="async" alt="STIN 88A exterior render" draggable="false" />
       </picture>
+      <!-- loading bar: real progress (downloads counted here, then the start-up stages reported by js/main.js) -->
+      <div class="hero-load" role="progressbar" aria-label="Loading the 3D model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="hero-bar"><i id="heroBar"></i></div>
+        <div class="hero-pct"><span id="heroLabel">Loading 3D model</span> <b id="heroPct">0%</b></div>
+      </div>
+      <script>
+        // Progress before js/main.js runs: each model / texture download that finishes moves the bar (up to 55 %);
+        // js/main.js then calls window.__progress(p) at its start-up stages. The bar eases toward the target so it
+        // never jumps backwards or looks stuck.
+        (function () {
+          var bar = document.getElementById("heroBar"), pct = document.getElementById("heroPct"), box = bar.closest(".hero-load");
+          var target = 0.04, shown = 0, done = 0, EXPECT = 70;
+          window.__progress = function (p) { if (p > target) target = Math.min(1, p); };
+          try {
+            new PerformanceObserver(function (l) {
+              l.getEntries().forEach(function (e) { if (/data\/(levels\/|model|units|room_accents)|assets\/sky/.test(e.name)) done++; });
+              window.__progress(0.04 + 0.51 * Math.min(1, done / EXPECT));
+            }).observe({ type: "resource", buffered: true });
+          } catch (e) {}
+          (function tick() {
+            shown += (target - shown) * 0.12 + 0.0008 * (target > shown ? 1 : 0); if (shown > target) shown = target;
+            var v = Math.round(shown * 100);
+            bar.style.transform = "scaleX(" + shown.toFixed(4) + ")"; pct.textContent = v + "%"; box.setAttribute("aria-valuenow", v);
+            if (shown < 0.999 || target < 1) requestAnimationFrame(tick);
+          })();
+        })();
+      </script>
     </section>
 
     <div id="lightbox" class="hidden" role="dialog" aria-modal="true">

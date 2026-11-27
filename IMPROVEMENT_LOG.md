@@ -610,3 +610,31 @@ New renderer only. Classic unchanged (ready 1.2 s, no errors).
 - **Also**: `fetchInto` no longer disposes the stand-in texture on the new renderer (there a dispose invalidates every material bound to it). That path isn't used by the current levels, so it is a guard only.
 - **Found (both renderers)**: the day sky photo's arrival costs a ~0.5 s task: `analyse` + `paleSky` + M1's `groundedEnv` in environment.js, all per-pixel JavaScript on the HDR. It could run on a half-size copy or in a worker.
 - **Still open for making WebGPU the default**: the remaining ~1.2 s frame (options: hold the intro fly until the hero view's pipelines are ready; or fewer distinct pipelines), map mode and 360° viewer untested, AO stalls (Ultra).
+
+## UI round (v6-webgpu, 2026-11-27): loading bar, no walk mode, Info toggle, Level 1 room without the site, Day / Night in rooms
+Client request: "add loading bar on the first page, or loading animation. then remove walking feature. make the information bar hidable during the room selection on 1st floor, remove the grounds as well (not during level selection) add day night feature during room inspection."
+- **Loading bar** (index.html, style.css, main.js):
+  - The landing render shows a real progress bar in a dark translucent pill (readable over the lawn), with the percentage and "Loading 3D model" (Indonesian text too).
+  - Up to 55 %: finished model / level / sky downloads, counted with a PerformanceObserver.
+  - After that, main.js reports its start-up stages (`glb` 60 % … `compiled` 95 %, `ready` 100 %) through `window.__progress`.
+  - The bar eases forward and never goes back. It fades out with the cover picture as before.
+- **Walk mode removed** (commit 7b3c087):
+  - Removed: the Walk buttons (toolbar, room card, 360° viewer), the walk HUD, `js/walk.js`, the collision mesh, three-mesh-bvh, and the Space shortcut.
+  - The building raycasts that used the collision tree now hit the drawn level meshes (`solidHits`); mood-light focus uses the room boxes.
+  - Tree places are baked to `data/trees.json` (291 trees, 17 KB), since the BVH scatter needed the collision tree.
+  - Classic ready ~0.9–1.06 s (was 1.2–1.6 s).
+- **Info toggle**: a "Hide info / Show info" chip (toolbar) slides the levels / rooms panel and the room card away, on desktop and phone. It shows in every floor and room view and resets when you go back to the overview. On a phone the room card covers most of the room, so this is the main use.
+- **Level 1**: a ROOM chosen on Level 1 is shown on white, without the ground, roads and trees. Level 1 chosen as a LEVEL keeps the site plan as before. Other floors are unchanged.
+- **Day / Night while inspecting a room**: the Day/Night chip now shows in the room view too (still hidden in plain floor views).
+  - Night in a room: deep blue backdrop (`#0d111c`) instead of white, dimmer plain light (`PLAIN_NIGHT` in environment.js), lamps / downlights and LED strips stay on, and style rooms (K.401/405/407/413/416) switch their Lights toggle on.
+  - Day returns to the white studio view.
+  - Furniture geometry is untouched.
+- **Also**: secondary card buttons (`.btn`, e.g. "360° view") now get a background and text colour from the theme. In night mode they had light text on a light default background.
+- **Checked** (local):
+  - Classic desktop and phone (375×812):
+    - Loading bar 23 % → 77 % → fade.
+    - Level 1 site on; K.101 site off; back to Level 1 on; Level 2 off; overview on.
+    - K.405 night with lights on, back to day white; `#K405-light` deep link at night.
+    - Info hide / show on the phone.
+  - `?renderer=webgpu`: same flow, no errors.
+  - No new console errors; all local requests 200.

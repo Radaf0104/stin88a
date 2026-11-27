@@ -304,6 +304,12 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
 
   return {
     rooms, isStyleRoom: (u) => !!u && rooms.has(u.label),
+    // (UI round) night in the room view: the room's lights switch on by themselves (the visitor can still turn them off)
+    setLights(on) {
+      const lt = active?.toggles.find((t) => t.id === "lights");
+      if (!lt || !!lt.t === on) return;
+      lt.t = on ? 1 : 0; renderDock(); invalidate(600);
+    },
     // room view opened / closed (main.js setRoomView / clearRoomView)
     enter(u, tv) {
       active = rooms.get(u.label) ?? null;

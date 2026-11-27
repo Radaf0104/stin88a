@@ -34,6 +34,7 @@ const STR = {
     hintInside: "Drag to look around", roomPhotos: "Room photos", seeAngle: "See this angle in 3D", back: "Back to 3D",
     time_day: "☀ Day", time_golden: "🌇 Golden hour", time_night: "☾ Night", hq: "HQ", lite: "Lite",
     bath: "bathroom",
+    hideInfo: "◧ Hide info", showInfo: "◨ Show info",
     massing: "▢ Massing", mapOn: "🌍 Map", mapOff: "🌿 Site plan",mapNoKey: "The real-world map needs a Google Maps API key: add googleMapsKey in js/config.js.",
   },
   id: {
@@ -50,6 +51,7 @@ const STR = {
     hintInside: "Geser untuk melihat sekeliling", roomPhotos: "Foto kamar", seeAngle: "Lihat sudut ini di 3D", back: "Kembali ke 3D",
     time_day: "☀ Siang", time_golden: "🌇 Senja", time_night: "☾ Malam", hq: "HQ", lite: "Ringan",
     bath: "kamar mandi",
+    hideInfo: "◧ Sembunyikan info", showInfo: "◨ Tampilkan info",
     massing: "▢ Massa", mapOn: "🌍 Peta", mapOff: "🌿 Rencana tapak",mapNoKey: "Peta dunia nyata butuh API key Google Maps: isi googleMapsKey di js/config.js.",
   },
 };
@@ -178,7 +180,21 @@ const ui = {
   dayNight: document.getElementById("dayNight"), langBtn: document.getElementById("langBtn"),
 };
 
-const state = { floor: null, unit: null, hover: null, inside: null, walking: false };
+const state = { floor: null, unit: null, hover: null, inside: null };
+let infoHidden = false;
+// (UI round) Day / Night while inspecting a room: night = dim ambient, deep blue backdrop, lamps, downlight and LED
+// strips on (style rooms switch their lights on). Re-applied whenever the view or the time changes (renderUI).
+let lastRoomNight = null;
+function applyRoomNight() {
+  try { // (roomStyle / isoK are declared further down: renderUI can run before they exist)
+    const on = roomNight();
+    if (on === lastRoomNight) return;
+    lastRoomNight = on;
+    if (on) roomStyle?.setLights?.(true);
+    if (isoK > 0) setIsoK(isoK); else env.setPlainNight(on);
+    invalidate(300);
+  } catch {}
+} // (UI round) the Info chip: levels / rooms panel and room card slid away
 let model, units = [], unitMeshes = [], bands = [], levelY = {}, overviewView, buildingBox;
 const isNight = () => env.current === "night";
 
@@ -274,7 +290,11 @@ $("lbImg").ondragstart = () => false;
 
 // ---------- load ----------
 document.getElementById("loadingText").textContent = t("loading");
-const timings = {}, tStart = performance.now(), mark = (k) => (timings[k] = Math.round(performance.now() - tStart));
+document.getElementById("heroLabel").textContent = t("loading").replace(/[….]+$/, "");
+// (UI round) the landing render's loading bar follows these start-up stages (downloads are counted in index.html)
+const STAGE_PROGRESS = { glb: 0.6, building: 0.68, fixtures: 0.7, doors: 0.76, compiled: 0.95, shaders: 0.97, ready: 1 };
+const timings = {}, tStart = performance.now();
+const mark = (k) => { timings[k] = Math.round(performance.now() - tStart); if (STAGE_PROGRESS[k]) window.__progress?.(STAGE_PROGRESS[k]); return timings[k]; };
 const [modelJson, unitsJson] = await Promise.all([fetch("data/model.json").then((r) => r.json()), fetch("data/units.json").then((r) => r.json())]);
 model = modelJson;
 model.levels.forEach((l, i) => (levelY[i] = l.z));
@@ -993,6 +1013,9 @@ function setCut(y, caps = true) {
 // isoK 0 = the full scene (sky, landscape, sun, shadows, ambient occlusion, bloom), 1 = only the masked part on white
 // with plain even light. Everything here only changes numbers (no shader rebuilds), so it can be animated.
 const WHITE_BG = new THREE.Color(1.6, 1.6, 1.6); // > 1 so it stays pure white after the tone curve
+// (UI round) a room inspected at night sits on a deep night blue instead of white, lit by its own lamps and LEDs
+const NIGHT_BG = new THREE.Color(0x0d111c);
+const roomNight = () => !!state.unit && env.current === "night";
 let isoK = 0, isoAnim = null, savedSky = null;
 function setIsoK(k) {
   if (k > 0 && !savedSky) savedSky = { bg: scene.background, intensity: scene.backgroundIntensity, fog: scene.fog?.density ?? 0 };
@@ -1001,13 +1024,16 @@ function setIsoK(k) {
   accents?.setPlain(k);
   env.setPlain(k);
   const tm = env.time ?? {};
-  mood.setFactor((tm.lamps ?? 1) * (1 - k));
+  const night = roomNight();
+  env.setPlainNight(night);
+  // the lamps: by day they fade out with the outside (plain studio light); a room at night keeps them on
+  mood.setFactor((tm.lamps ?? 1) * (night ? 1 : 1 - k));
   if (bloomPass) bloomPass.enabled = k === 0;
   if (post) post.aoAmount.value = 1 - k; // (M3) the plain white views fade the AO out with the sky
   grade.enabled = k < 0.5; // plain white views: no grade (as before)
   grade.bloom = k === 0;    // nor the bloom brightening (bloom was off there too)
   if (savedSky) {
-    if (k >= 1) scene.background = WHITE_BG;
+    if (k >= 1) scene.background = night ? NIGHT_BG : WHITE_BG;
     else { scene.background = savedSky.bg; scene.backgroundIntensity = savedSky.intensity * (1 + 14 * k * k); } // sky washes out to white
     if (scene.fog) scene.fog.density = savedSky.fog * (1 - k);
   }
@@ -1326,6 +1352,12 @@ function renderUI() {
   document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
   ui.overviewBtn.textContent = t("overview");
   ui.overviewBtn.classList.toggle("active", state.floor === null);
+  const infoOffered = state.floor !== null; // (a level or a room is selected)
+  if (!infoOffered) infoHidden = false;
+  document.body.classList.toggle("info-hidden", infoHidden);
+  $("infoBtn").style.display = infoOffered ? "" : "none";
+  $("infoBtn").textContent = t(infoHidden ? "showInfo" : "hideInfo");
+  $("infoBtn").setAttribute("aria-pressed", String(infoHidden));
   ui.floorList.innerHTML = "";
   for (const f of CONFIG.floors) {
     const rooms = units.filter((u) => u.level === f.level && u.kind !== "space");
@@ -1361,7 +1393,9 @@ function renderUI() {
   if (state.inside) $("insideTitle").textContent = state.inside.kind === "space" ? L(state.inside.space.label)
     : `${state.inside.label} · ${L(CONFIG.types[state.inside.type]?.label) ?? ""}`;
   ui.dayNight.textContent = t("time_" + (env.current ?? "day"));
-  ui.dayNight.style.display = state.floor === null ? "" : "none"; // floor / room views have plain light
+  // overview and (UI round) the room view; the floor views keep their plain light
+  ui.dayNight.style.display = state.floor === null || state.unit ? "" : "none";
+  applyRoomNight();
   massing?.setLang(lang);
   ui.langBtn.textContent = t("lang");
   $("galleryBtn").textContent = "▦ " + t("renders");
@@ -1418,6 +1452,9 @@ function showCard(u) {
 function hideCard() { ui.card.classList.add("hidden"); }
 
 ui.overviewBtn.onclick = () => selectFloor(null);
+// (UI round) Hide / show the information panels (levels and rooms list, room card) while choosing rooms, so the 3D view
+// is unobstructed - on phones especially. Offered once a level or room is selected; the overview always shows them.
+$("infoBtn").onclick = () => { infoHidden = !infoHidden; renderUI(); };
 ui.langBtn.onclick = () => { lang = lang === "en" ? "id" : "en"; try { localStorage.setItem("stin-lang", lang); } catch {} renderUI(); };
 ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); // golden hour was removed: day <-> night
 // (the "Map" and "Massing" buttons were removed at the client's request, 2026-11-26: the site plan and the massing are
@@ -1758,13 +1795,15 @@ function frame(now) {
   const withAO = aoOK && !busy && stillLongEnough;
   if (withAO) aoPending = false;
 
-  // trees in front of the building step aside (not while walking, where they're part of the scenery)
+  // trees in front of the building step aside
   landscape.updateOcclusion(camera, buildingBox, !state.inside);
   if (massing?.updateOcclusion(camera, buildingBox)) refreshShadows(); // pad-1 box hidden / shown: its shadow too
   // site in floor views (client, 2026-11-26: "when selecting level 1, show the ground and roads"): the Level 1 view
   // keeps the site plan; other floor / room / walk views drop it once the outside has mostly faded. The massing boxes
   // go in every floor view (the plan cut would slice them open).
-  const siteOn = !map.on && (isoK < 0.5 || (state.floor === 1));
+  // (UI round, client: "remove the grounds ... not during level selection") a ROOM chosen on Level 1 shows it on white
+  // without the ground, roads and trees; Level 1 chosen as a LEVEL keeps them
+  const siteOn = !map.on && (isoK < 0.5 || (state.floor === 1 && !state.unit));
   if (ground.visible !== siteOn) { ground.visible = siteOn; invalidate(100); }
   // the floor views have plain, sunless light on white, in which the site's render colours (olive lawn, dark asphalt)
   // read as a dark slab: blend them to the light site-plan palette, in step with the fade

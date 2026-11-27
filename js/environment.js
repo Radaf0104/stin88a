@@ -151,11 +151,15 @@ export function createEnvironment(renderer, scene) {
   }
   // Light levels per time of day. A TIMES entry may add `inside: { sunI, env, fill, exposure }` to override them while
   // walking / inside a room (none needed now that ambient occlusion works properly).
-  let inside = false, plain = 0;
-  const PLAIN = { env: 0.9, fill: 1.35, exposure: 1.0, sky: new THREE.Color(0xffffff), ground: new THREE.Color(0xd8d4cc) };
+  let inside = false, plain = 0, plainNight = false;
+  const PLAIN_DAY = { env: 0.9, fill: 1.35, exposure: 1.0, sky: new THREE.Color(0xffffff), ground: new THREE.Color(0xd8d4cc) };
+  // (UI round) the room view at night: dim, cool "moonlight" ambient, so the room's own lamps, downlight and LED strips
+  // carry it (the plain day light above is a bright, even studio light)
+  const PLAIN_NIGHT = { env: 0.1, fill: 0.16, exposure: 1.0, sky: new THREE.Color(0x8796c4), ground: new THREE.Color(0x2c2c34) };
   const baseSky = new THREE.Color(), baseGround = new THREE.Color();
   function applyLevels() {
     const t = TIMES[current]; if (!t) return;
+    const PLAIN = plainNight ? PLAIN_NIGHT : PLAIN_DAY;
     const o = inside ? t.inside ?? {} : {};
     const roomLight = (inside && t.roomEnv) || plain > 0.5;
     setEnvTex(roomLight ? roomEnv : envRT?.texture ?? null);
@@ -171,8 +175,9 @@ export function createEnvironment(renderer, scene) {
   // Plain "studio" light for the floor / room / walk views: no sun (so no sun shadows), an even white sky light and a
   // neutral room reflection. k blends from the time-of-day light (0) to plain light (1), for the fade while flying.
   function setPlain(k) { if (k !== plain) { plain = k; applyLevels(); } }
+  function setPlainNight(on) { if (on !== plainNight) { plainNight = on; applyLevels(); } }
   return {
-    sun, fill, set, setInside, setPlain, get plain() { return plain; },
+    sun, fill, set, setInside, setPlain, setPlainNight, get plain() { return plain; },
     get current() { return current; }, get time() { return TIMES[current]; },
     // called when a sky photo finishes loading after the time was already chosen
     onHdriReady(cb) { onReady = cb; },
