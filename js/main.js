@@ -898,7 +898,9 @@ const heroView = {
   pos: new THREE.Vector3(-2, 1.7, buildingBox.max.z + 31),
   target: new THREE.Vector3(-1, 1.2, 0),
 };
-function introFly() { flyTo(heroView.pos, heroView.target, 2.2); }
+// Portrait screens (phones) are too narrow for a 48 m facade at eye level (it was cut off and tiny): they keep the
+// aerial overview as before.
+function introFly() { const v = camera.aspect >= 1 ? heroView : overviewView; flyTo(v.pos, v.target, 2.2); }
 
 // ---------- camera tween ----------
 let tween = null;
