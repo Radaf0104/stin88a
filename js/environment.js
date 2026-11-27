@@ -35,8 +35,8 @@ export const TIMES = {
             grade: { gain: 0.955, contrast: 1.16, saturation: 1.04, lift: 0, gamma: 1.08, warm: [1.02, 1.0, 0.975], cool: [0.975, 0.985, 1.02], vignette: 0.16 }, ground: 0x4a5a2c, fogDensity: 0.0015 /* the masterplan site reaches ~150 m: light haze so it keeps its colour */, elev: 48, turbidity: 3, rayleigh: 1.2 },
   golden: { hdri: "assets/sky/kloppenheim_06_puresky_1k.hdr", sunAz: -55, sun: 0xffb46e, sunI: 2.3, env: 0.53, bg: 2.0, exposure: 0.75,
             fill: [0xfff4e6, 0x9a8a72, 0.09], roomEnv: 0.22, window: [0xffcf9a, 2.5], skyDesat: 0.2, skyHaze: 0.5, roomGlow: 0.9, lamps: 0.9, glow: 0.4,
-            grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },
-  night:  { elev: 28, sunAz: 300, sun: 0x8ea6ff, sunI: 3.5, env: 5, bg: 1, exposure: 0.75, roomEnv: 0.08, window: [0x9fb2ff, 0.3], roomGlow: 1.4, grade: { contrast: 1.04, vignette: 0.3 }, lamps: 1.6, glow: 1.0, ground: 0x6f7f66, fog: 0x141a28, fogDensity: 0.0045, night: true },
+            grade: { contrast: 1.06, saturation: 1.04, lift: 0.03, warm: [1.05, 1.0, 0.92], cool: [0.94, 0.97, 1.05], vignette: 0.25, glowThreshold: 2.2, glowStrength: 0.16 }, ground: 0xe8dcc4, fogDensity: 0.003, elev: 8, turbidity: 6, rayleigh: 2.6 },
+  night:  { elev: 28, sunAz: 300, sun: 0x8ea6ff, sunI: 3.5, env: 5, bg: 1, exposure: 0.75, roomEnv: 0.08, window: [0x9fb2ff, 0.3], roomGlow: 1.4, grade: { contrast: 1.04, vignette: 0.3, glowThreshold: 0.9, glowStrength: 0.22 }, lamps: 1.6, glow: 1.0, ground: 0x6f7f66, fog: 0x141a28, fogDensity: 0.0045, night: true },
 };
 
 export function createEnvironment(renderer, scene) {
@@ -98,19 +98,25 @@ export function createEnvironment(renderer, scene) {
 
   const sunDir = new THREE.Vector3();
   let current = null, radius = 30;
+  const envRTs = {}; // (M3, new renderer) environment targets kept per time of day + source
   function set(name, r = radius) {
     radius = r;
     const t = TIMES[name]; current = name;
     requestHdri(name);
     const h = hdris[name];
-    envRT?.dispose();
+    // (M3) new renderer: one environment target per time of day + source, re-rendered in place and never freed (at most
+    // ~5 small targets). Freeing the old one on a switch hit frames still queued with it ("destroyed texture used in
+    // a submit", ~100 GPU errors after start-up). Classic: freed at once, as before.
+    const envKey = name + (h ? ":photo" : ":stand-in");
+    const reuse = GPU ? envRTs[envKey] ?? null : null;
+    if (!GPU) envRT?.dispose();
     if (h) {
       // turn the sky so the photo's sun sits at the azimuth we want
       const rot = THREE.MathUtils.degToRad(t.sunAz) - h.az;
       scene.background = h.bgTex ?? h.tex;
       scene.backgroundRotation.set(0, rot, 0);
       scene.environmentRotation.set(0, rot, 0);
-      envRT = pmrem.fromEquirectangular(h.envTex ?? h.tex);
+      envRT = pmrem.fromEquirectangular(h.envTex ?? h.tex, reuse);
       setEnvTex(envRT.texture);
       const elev = t.sunElev != null ? THREE.MathUtils.degToRad(t.sunElev) : Math.max(h.elev, THREE.MathUtils.degToRad(6));
       sunDir.setFromSphericalCoords(1, Math.PI / 2 - elev, THREE.MathUtils.degToRad(t.sunAz));
@@ -127,12 +133,13 @@ export function createEnvironment(renderer, scene) {
       const prevTM = renderer.toneMapping; renderer.toneMapping = THREE.NoToneMapping;
       cubeCam.update(renderer, skyScene);
       renderer.toneMapping = prevTM;
-      envRT = pmrem.fromCubemap(cubeRT.texture);
+      envRT = pmrem.fromCubemap(cubeRT.texture, reuse);
       scene.background = cubeRT.texture;
       scene.backgroundRotation.set(0, 0, 0); scene.environmentRotation.set(0, 0, 0);
       setEnvTex(envRT.texture);
       setFog(t.fog ?? 0xc4d2dc, t.fogDensity);
     }
+    if (GPU) envRTs[envKey] = envRT;
     scene.backgroundIntensity = h ? t.bg ?? 1 : 1;
     renderer.toneMapping = t.neutral ? THREE.NeutralToneMapping : THREE.AgXToneMapping;
     sun.color.set(t.sun);

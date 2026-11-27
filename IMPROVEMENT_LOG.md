@@ -490,3 +490,28 @@ Measured (RTX 4060 laptop, built-in browser, local server, warm HTTP cache):
 
 - Classic had 180 / 363 ms frames on floor and golden switches. They were not compared against before; they are likely pre-existing (they are independent of the new code paths).
 - Still open for making the new renderer the default: map mode (3d-tiles-renderer) and the 360° viewer untested; procedural sky stand-in; ~7 % brightness difference; cold-cache start-up (first ever visit, no browser shader cache) not measured here.
+
+## M3 (v6-webgpu) — post chain on the new renderer: GTAO, selective bloom, SMAA, quality tiers (user: "Start M3")
+New renderer only (`?renderer=webgpu`). The default classic site is unchanged (ready 1.2 s, no errors after these changes).
+- **Quality tiers** (`QUALITY` in grade.js). Default: Balanced on phones, High elsewhere. `?quality=` overrides, and single switches `?ao= &bloom= &smaa= &msaa=` exist for testing.
+
+| Tier | AO | Bloom | Anti-aliasing |
+|---|---|---|---|
+| Ultra | GTAO full resolution, 16 samples | selective | SMAA |
+| High | GTAO half resolution, 12 samples | selective | SMAA |
+| Balanced | none | old per-pixel lift only | 4× MSAA (= M2) |
+
+- **GTAO** (three/addons `ao()`), radius 0.35 m, plus `denoise()` (edge-aware, normals rebuilt from depth). It darkens window boxes, batten gaps, soffits and furniture contact. 0.6 m left dark halos around thin railings, so it was reduced.
+  - WebGPU can't sample the depth part of a combined depth + stencil buffer ("Multiple aspects selected"), which the section caps need. So the AO tiers keep **two chains**:
+    - exterior views: a plain depth buffer + AO
+    - plan-cut views: depth + stencil for the caps, no AO (those views fade AO out anyway, `aoAmount = 1 − isoK`)
+  - Pre-compile and warm-up cover both targets (`compileTargets()`).
+- **Bloom**: at threshold 0.9 in linear light every sunlit wall glowed (a white halo over the facade). Sunlit plaster reaches ~3–4 in linear light, so the threshold follows the time of day: day 4.5 (sun glints only), golden 2.2, night 0.9 (lamps, LED lines). Strength 0.12 / 0.16 / 0.22, radius 0.5. The old per-pixel brightening stays on every tier, so brightness keeps parity with classic. Bloom reads the scene texture directly: fed the AO expression, it first rendered that into an extra full-size texture.
+- **Environment maps**: freeing the previous one on a time switch hit frames still queued with it (~100 "destroyed texture used in a submit" GPU errors after start-up). The new renderer now keeps one PMREM target per time of day + source and re-renders it in place. 0 GPU errors since.
+- **Hero colour** (1600×900): High 45/135/240, RGB 124/133/129. M2 53/136/240, RGB 127/136/132. The darker p5 is the AO.
+- **Frame time** (RTX 4060 laptop, hidden built-in browser pane, GPU-synced): all tiers built in the same page and measured back to back. AO + denoise + SMAA + bloom add about 1–3 ms over Balanced. The machine's own load changed a lot during this session: Balanced measured 8.6 ms earlier and 17–21 ms in the final A/B. So only the relative cost is reliable; absolute 60 FPS needs a re-check on an idle machine.
+- **Checks on High**: hero, floor 2 (cut chain, caps), unit K.405, night (lamp glow), golden (its sky photo was still loading: grey stand-in, as before), no console or GPU errors. tools/out/m3_high_hero.jpg, m3_ao_crop.jpg, m3_modes.jpg.
+- **Open for M4 look-dev**:
+  - AO still makes railings read heavier.
+  - The glass lantern picks up AO from what is behind it (transparent surfaces don't write depth).
+  - Batten gaps are now strongly shaded: check against 3.jpg.

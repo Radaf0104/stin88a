@@ -12,7 +12,7 @@ import { createRoomStyle, STYLE_ROOMS } from "./roomstyle.js";
 import { createAccents } from "./accents.js";
 import { makeTextures, tileRepeat } from "./proctex.js";
 import { createMap } from "./map.js";
-import { createGrade, createSky, createPost } from "./grade.js";
+import { createGrade, createSky, createPost, QUALITY } from "./grade.js";
 import { createIsolation } from "./isolate.js";
 import { createSpaces } from "./spaces.js";
 import { GPU, FORCE_WEBGL, TSL } from "./gpu.js";
@@ -120,9 +120,19 @@ const sky = createSky(renderer);
 scene.add(sky.mesh);
 // (M2) new renderer: the grade (and the old bloom's brightening) is one post-processing pass again, written in TSL;
 // materials stay untouched and the sky is the scene background
-const post = GPU ? createPost(renderer, scene, camera, grade.uniforms) : null;
+// (M3) quality tier of the new renderer: ?quality=ultra|high|balanced, else balanced on phones and high elsewhere
+const qs = new URLSearchParams(location.search);
+const tier = { ...(QUALITY[qs.get("quality")] ?? (phone ? QUALITY.balanced : QUALITY.high)) };
+// single switches for testing: ?ao=0|1 &bloom=0|1 &smaa=0|1 &msaa=0|4
+for (const k of ["ao", "bloom", "smaa"]) if (qs.has(k)) tier[k] = qs.get(k) === "1";
+if (qs.has("msaa")) tier.msaa = +qs.get("msaa");
+if (tier.ao) { tier.aoScale ??= 0.5; tier.aoSamples ??= 12; }
+const post = GPU ? createPost(renderer, scene, camera, grade.uniforms, tier) : null;
 // where the scene is really drawn: shaders must be pre-compiled for this target (classic: the screen)
-const compileTarget = () => (post ? post.scenePass.renderTarget : null);
+// where the scene is really drawn: shaders must be pre-compiled for these targets (classic: the screen). New renderer:
+// [0] = the exterior chain (with AO), [1] = the plan-cut chain (stencil for the section caps) on the AO tiers
+const compileTargets = () => (post ? post.targets() : [null]);
+const compileTarget = () => compileTargets()[0];
 // (M1) Architectural "shift lens": near eye level the picture is shifted up instead of tilting the camera, so the
 // building's verticals stay vertical, like the renders (3.jpg). The shift fades out as the camera rises above ~14 deg,
 // and is off while walking or inside a room. Only the projection changes (no extra cost); picking stays consistent
@@ -142,7 +152,7 @@ function applyLens() {
 }
 function renderScene() { // draw one frame to the screen
   applyLens();
-  if (post) { post.render(); return; }
+  if (post) { post.render(clipPlane.constant < 1e5); return; } // (M3: the cut views use the stencil chain)
   sky.update(scene);
   renderer.render(scene, camera);
   sky.restore(scene);
@@ -968,6 +978,7 @@ function setIsoK(k) {
   const tm = env.time ?? {};
   mood.setFactor((tm.lamps ?? 1) * (1 - k));
   if (bloomPass) bloomPass.enabled = k === 0;
+  if (post) post.aoAmount.value = 1 - k; // (M3) the plain white views fade the AO out with the sky
   grade.enabled = k < 0.5; // plain white views: no grade (as before)
   grade.bloom = k === 0;    // nor the bloom brightening (bloom was off there too)
   if (savedSky) {
@@ -1983,8 +1994,11 @@ async function buildAccents() {
   a.setGlow(env.time?.glow ?? 0); a.setPlain(isoK);
   // compile their 3 shaders off-screen (shown for this synchronous moment only, no frame is drawn in between), then
   // let the current view decide what is visible
-  renderer.setRenderTarget(compileTarget());
-  const compiling = meshes.map((m) => { m.visible = true; const p = renderer.compileAsync(m, camera, scene); m.visible = false; return p; });
+  const compiling = [];
+  for (const target of compileTargets()) {
+    renderer.setRenderTarget(target);
+    for (const m of meshes) { m.visible = true; compiling.push(renderer.compileAsync(m, camera, scene)); m.visible = false; }
+  }
   renderer.setRenderTarget(null);
   showBand(band[0], band[1]);
   accents = a;
@@ -2029,8 +2043,10 @@ function warmUpRest() {
       const batch = all.slice(i, i + 8); i += 8;
       const keep = batch.map((o) => { const k = []; for (let p = o; p; p = p.parent) k.push([p, p.visible]); return [k, o.frustumCulled]; });
       for (const o of batch) { for (let p = o; p; p = p.parent) p.visible = true; o.frustumCulled = false; }
-      renderer.setRenderTarget(compileTarget());
-      for (const o of batch) renderer.compileAsync(o, camera, scene).catch(() => {});
+      for (const target of compileTargets()) { // (M3: both chains' targets)
+        renderer.setRenderTarget(target);
+        for (const o of batch) renderer.compileAsync(o, camera, scene).catch(() => {});
+      }
       renderer.setRenderTarget(null);
       batch.forEach((o, j) => { for (const [p, v] of keep[j][0]) p.visible = v; o.frustumCulled = keep[j][1]; });
     }
@@ -2043,7 +2059,7 @@ renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
-window.STIN = { THREE, scene, camera, renderer, walker, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
+window.STIN = { THREE, post, tier, scene, camera, renderer, walker, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
   iso, spaces, units, levelY, selectFloor, selectUnit, startWalk, exitWalk, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console

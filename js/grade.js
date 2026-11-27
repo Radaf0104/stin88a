@@ -7,7 +7,9 @@
 import * as THREE from "three";
 import { GPU, TSL } from "./gpu.js";
 
-export const GRADE_DEFAULT = { gain: 1, contrast: 1, saturation: 1, lift: 0, warm: [1, 1, 1], cool: [1, 1, 1], vignette: 0, gamma: 1 };
+// glow*: (M3, new renderer's AO tiers) the real bloom - only what is brighter than glowThreshold in linear light glows.
+// By day sunlit plaster reaches ~3-4, so only sun glints pass 4.5; at night the lamps and LED lines (~1-2.5) do.
+export const GRADE_DEFAULT = { gain: 1, contrast: 1, saturation: 1, lift: 0, warm: [1, 1, 1], cool: [1, 1, 1], vignette: 0, gamma: 1, glowThreshold: 4.5, glowStrength: 0.12 };
 
 const GLSL = /* glsl */ `
   if (uGradeOn > 0.5) {
@@ -53,6 +55,7 @@ export function createGrade() {
     uGradeOn: { value: 1 }, uGradeContrast: { value: 1 }, uGradeSaturation: { value: 1 }, uGradeLift: { value: 0 },
     uGradeWarm: { value: new THREE.Vector3(1, 1, 1) }, uGradeCool: { value: new THREE.Vector3(1, 1, 1) },
     uGradeVignette: { value: 0 }, uGradeGain: { value: 1 }, uGradeGamma: { value: 1 }, uGradeRes: { value: new THREE.Vector2(1, 1) },
+    uGlowThreshold: { value: 4.5 }, uGlowStrength: { value: 0.12 },
   };
   // (M2) new renderer: the same numbers as TSL uniform nodes (they also have .value, so set() below works unchanged)
   if (GPU) for (const k in U) U[k] = TSL.uniform(U[k].value);
@@ -94,6 +97,7 @@ export function createGrade() {
       const v = { ...GRADE_DEFAULT, ...g };
       U.uGradeGain.value = v.gain; U.uGradeContrast.value = v.contrast; U.uGradeSaturation.value = v.saturation;
       U.uGradeLift.value = v.lift; U.uGradeVignette.value = v.vignette; U.uGradeGamma.value = v.gamma; U.uGradeWarm.value.set(...v.warm); U.uGradeCool.value.set(...v.cool);
+      U.uGlowThreshold.value = v.glowThreshold; U.uGlowStrength.value = v.glowStrength;
     },
     setResolution(w, h) { U.uGradeRes.value.set(w, h); },
     set enabled(on) { U.uGradeOn.value = on ? 1 : 0; },
@@ -145,45 +149,93 @@ export function createSky(renderer) {
   };
 }
 
-// (M2) New renderer only: the whole picture is drawn once (with 4x multisampling, like the canvas's own edge smoothing),
-// then one TSL pass does what grade.js injected into every material on the classic renderer, in the same order:
-//  1. in linear light, the old bloom's brightening (bright surfaces + a small even glow) - PRE_TONEMAP above
-//     (fog needs no move here: node materials already mix it before the tone curve)
-//  2. the tone curve + sRGB (renderOutput, using the renderer's toneMapping / exposure / colour space)
-//  3. the grade on the display colour - GLSL above, line for line
-// U: the grade's uniforms (TSL uniform nodes on this renderer). render() rebuilds the pass when the tone curve changes
-// (day = Neutral, golden / night = AgX).
-export function createPost(renderer, scene, camera, U) {
-  const { pass, vec3, vec4, vec2, float, dot, mix, smoothstep, clamp, pow, length, screenUV, screenSize, renderOutput } = TSL;
-  // the section caps count surfaces in the stencil buffer (js/main.js), so the pass's target needs one too
-  const depthTexture = new THREE.DepthTexture();
-  depthTexture.format = THREE.DepthStencilFormat; depthTexture.type = THREE.UnsignedInt248Type;
-  const scenePass = pass(scene, camera, { samples: 4, stencilBuffer: true, depthTexture });
-  const src = scenePass.getTextureNode("output");
+// (M2, M3) New renderer only. The picture is drawn once into the pass's target, then one TSL chain finishes it:
+//  1. ambient occlusion (GTAO, from the depth buffer) darkens corners, recesses, soffits and furniture contact
+//  2. bloom: a soft glow around the brightest surfaces (lamps, LED lines, sunlit white plaster), in linear light; on
+//     the tier without it, the old per-pixel bloom brightening stands in (PRE_TONEMAP above)
+//  3. the tone curve + sRGB (renderOutput, using the renderer's toneMapping / exposure / colour space)
+//  4. the grade on the display colour (GLSL above, line for line)
+//  5. edge smoothing: 4x multisampling of the scene, or SMAA on the finished picture where AO reads the depth buffer
+// Q = the quality tier (QUALITY below). U = the grade's uniforms (TSL uniform nodes on this renderer). render() rebuilds
+// the chain when the tone curve changes (day = Neutral, golden / night = AgX).
+const POST = GPU ? await Promise.all([
+  import("three/addons/tsl/display/GTAONode.js"), import("three/addons/tsl/display/BloomNode.js"), import("three/addons/tsl/display/SMAANode.js"),
+  import("three/addons/tsl/display/DenoiseNode.js"),
+]).then(([a, b, s, d]) => ({ ao: a.ao, bloom: b.bloom, smaa: s.smaa, denoise: d.denoise })) : null;
+
+// Ultra: full-resolution AO + bloom (discrete desktop GPUs). High: half-resolution AO + bloom (default on desktops /
+// laptops). Balanced: no AO, no real bloom, 4x MSAA (phones / tablets). ?quality=ultra|high|balanced overrides.
+export const QUALITY = {
+  ultra:    { name: "ultra", ao: true, aoScale: 1, aoSamples: 16, bloom: true, msaa: 0, smaa: true },
+  high:     { name: "high", ao: true, aoScale: 0.5, aoSamples: 12, bloom: true, msaa: 0, smaa: true },
+  balanced: { name: "balanced", ao: false, bloom: false, msaa: 4, smaa: false },
+};
+
+export function createPost(renderer, scene, camera, U, Q = QUALITY.high) {
+  const { pass, vec3, vec4, vec2, float, dot, mix, smoothstep, clamp, pow, length, screenUV, screenSize, renderOutput, uniform } = TSL;
   const LUM = vec3(0.2126, 0.7152, 0.0722);
-  const L0 = dot(src.rgb, LUM);
-  const bloomed = src.rgb.add(src.rgb.mul(U.uBloomK).mul(smoothstep(U.uBloomLo, U.uBloomHi, L0))).add(src.rgb.mul(U.uBloomAmb));
-  const shown = renderOutput(vec4(bloomed, src.a));
-  let gc = shown.rgb;
-  const gL = dot(gc, LUM);
-  gc = gc.mul(mix(U.uGradeCool, U.uGradeWarm, smoothstep(0.15, 0.85, gL)));                      // split toning
-  gc = clamp(gc.sub(0.5).mul(U.uGradeContrast).add(0.5), 0.0, 1.0);                               // contrast
-  gc = pow(gc, vec3(U.uGradeGamma));                                                               // midtone gamma
-  gc = gc.add(U.uGradeLift.mul(float(1).sub(gc)).mul(float(1).sub(smoothstep(0.0, 0.5, gc))));   // shadow lift
-  gc = mix(vec3(dot(gc, LUM)), gc, U.uGradeSaturation);                                            // saturation
-  const aspect = screenSize.x.div(screenSize.y);
-  const gR = length(screenUV.sub(0.5).mul(vec2(aspect, 1))).div(length(vec2(aspect.mul(0.5), 0.5)));
-  gc = gc.mul(float(1).sub(U.uGradeVignette.mul(smoothstep(0.6, 1.0, gR))));                    // vignette
-  gc = clamp(gc.mul(U.uGradeGain), 0.0, 1.0);
-  const pipeline = new THREE.RenderPipeline(renderer);
-  pipeline.outputColorTransform = false; // (done above, before the grade)
-  pipeline.outputNode = vec4(mix(shown.rgb, gc, U.uGradeOn), 1);
+  const aoAmount = uniform(1); // 0 = AO off (the isolated white views fade it out with the rest)
+  // One chain = one scene pass + the finishing steps. GTAO has to read the depth buffer, which WebGPU can't do on the
+  // combined depth + stencil buffer the section caps need (js/main.js counts surfaces in the stencil). So the AO tiers
+  // keep two chains: without a plan cut (exterior views) a plain depth buffer + AO; with a cut (floor / room views, which
+  // fade the AO out anyway) depth + stencil for the caps, no AO. Balanced has a single (stencil) chain.
+  function chain(stencil) {
+    let depthTexture;
+    if (stencil) { depthTexture = new THREE.DepthTexture(); depthTexture.format = THREE.DepthStencilFormat; depthTexture.type = THREE.UnsignedInt248Type; }
+    const scenePass = pass(scene, camera, { samples: Q.msaa, stencilBuffer: stencil, ...(depthTexture ? { depthTexture } : {}) });
+    const src = scenePass.getTextureNode("output");
+    let lin = src.rgb, aoPass = null;
+    if (Q.ao && !stencil) {
+      aoPass = POST.ao(scenePass.getTextureNode("depth"), null, camera);
+      aoPass.resolutionScale = Q.aoScale;
+      aoPass.samples.value = Q.aoSamples;
+      // 0.35 m reach: window boxes, soffits and fin gaps darken, without dark halos around thin railings (0.6 m had them)
+      aoPass.radius.value = 0.35; aoPass.thickness.value = 1; aoPass.distanceExponent.value = 1.3; aoPass.scale.value = 1.1;
+      // edge-aware blur of the AO (normals rebuilt from depth): removes its sampling grain without bleeding over edges
+      const depthNode = scenePass.getTextureNode("depth");
+      const aoClean = POST.denoise(aoPass.getTextureNode(), depthNode, null, camera);
+      lin = lin.mul(mix(float(1), aoClean.r, aoAmount));
+    }
+    // the old per-pixel brightening stays on every tier (the look and brightness were tuned with it); the AO tiers add
+    // a real, selective glow on top: only what passes the time-of-day threshold (sun glints by day, lamps / LEDs at night)
+    const L0 = dot(lin, LUM);
+    const lifted = lin.add(lin.mul(U.uBloomK).mul(smoothstep(U.uBloomLo, U.uBloomHi, L0))).add(lin.mul(U.uBloomAmb));
+    // (bloom reads the scene texture itself: given the AO expression it first rendered that into a full-size texture)
+    lin = Q.bloom ? lifted.add(POST.bloom(src, U.uGlowStrength, 0.5, U.uGlowThreshold).rgb) : lifted;
+    const shown = renderOutput(vec4(lin, src.a));
+    let gc = shown.rgb;
+    const gL = dot(gc, LUM);
+    gc = gc.mul(mix(U.uGradeCool, U.uGradeWarm, smoothstep(0.15, 0.85, gL)));                      // split toning
+    gc = clamp(gc.sub(0.5).mul(U.uGradeContrast).add(0.5), 0.0, 1.0);                               // contrast
+    gc = pow(gc, vec3(U.uGradeGamma));                                                               // midtone gamma
+    gc = gc.add(U.uGradeLift.mul(float(1).sub(gc)).mul(float(1).sub(smoothstep(0.0, 0.5, gc))));   // shadow lift
+    gc = mix(vec3(dot(gc, LUM)), gc, U.uGradeSaturation);                                            // saturation
+    const aspect = screenSize.x.div(screenSize.y);
+    const gR = length(screenUV.sub(0.5).mul(vec2(aspect, 1))).div(length(vec2(aspect.mul(0.5), 0.5)));
+    gc = gc.mul(float(1).sub(U.uGradeVignette.mul(smoothstep(0.6, 1.0, gR))));                    // vignette
+    gc = clamp(gc.mul(U.uGradeGain), 0.0, 1.0);
+    let out = vec4(mix(shown.rgb, gc, U.uGradeOn), 1);
+    if (Q.smaa) out = POST.smaa(out);
+    const pipeline = new THREE.RenderPipeline(renderer);
+    pipeline.outputColorTransform = false; // (done above, before the grade)
+    pipeline.outputNode = out;
+    return { pipeline, scenePass, aoPass };
+  }
+  const cutChain = chain(true);
+  const openChain = Q.ao ? chain(false) : cutChain;
+  const chains = [...new Set([openChain, cutChain])];
   let tm = renderer.toneMapping, cs = renderer.outputColorSpace;
   return {
-    pipeline, scenePass,
-    render() {
-      if (renderer.toneMapping !== tm || renderer.outputColorSpace !== cs) { tm = renderer.toneMapping; cs = renderer.outputColorSpace; pipeline.needsUpdate = true; }
-      pipeline.render();
+    aoAmount, quality: Q, chains,
+    aoPass: openChain.aoPass,
+    // the render targets the scene is drawn into (shaders are pre-compiled for each); [0] = the start-up view's
+    targets: () => chains.map((c) => c.scenePass.renderTarget),
+    render(cut = false) {
+      if (renderer.toneMapping !== tm || renderer.outputColorSpace !== cs) {
+        tm = renderer.toneMapping; cs = renderer.outputColorSpace;
+        for (const c of chains) c.pipeline.needsUpdate = true;
+      }
+      (cut ? cutChain : openChain).pipeline.render();
     },
   };
 }
