@@ -548,3 +548,37 @@ New renderer only. Classic unchanged (ready 1.6 s, no errors). No downloads: CC0
   - real PBR textures
   - trees / terrain / haze (M5)
   - 37 one-off "isCubeTexture of null" TSL errors seen once in an AO + priming run, not reproduced by per-object compiles; not seen on High
+
+## M5 (v6-webgpu) — trees and a photographed lawn (user: "Yes, with downloads")
+Both renderers (plain three.js): the classic site gets them too.
+- **Assets** (ASSETS_LICENSES.md): ambientCG LeafSet005 + Grass004, Poly Haven bark_brown_02, all CC0 and checked before download.
+  - The Poly Haven tree scans were rejected: 0.3–4.8 M triangles, 40–200 MB of geometry, leaves with no alpha.
+  - Leaves are cut out with their opacity map and composited in the browser into two 512 px leaf-cluster cards on thin twigs.
+  - KTX2 via tools/build-foliage.mjs: desktop 0.71 MB, phone 0.19 MB.
+- **js/foliage.js**: 3 procedural species (round, tall oval, broad spreading).
+  - Geometry: tapered bark trunk + 5–7 branches; crown of 70–100 leaf cards facing out of the crown ±40°. Card normals point out of the crown, so it shades as one soft volume.
+  - Drawing: GPU-instanced (2 meshes per species + 1 for contact shadows = 7 draw calls for 291 trees, +115k triangles).
+  - Per tree: random size 9–20 m, turn, lean and leaf tint; soft round contact shadow.
+  - Trees don't cast into the sun's shadow map (cost; alpha shadows).
+- **Scatter**: jittered 9 m grid thinned by low-frequency noise (groups and lines, not an orchard). Lawn only, using three-mesh-bvh raycasts against the site plan: 2 s → 17–42 ms. Kept clear of:
+  - the building (5 m) and the neighbour blocks (3 m)
+  - roads and pads
+  - the lawn in front of the terrace facade, so the eye-level hero keeps its open lawn like 3.jpg
+- **Lawn**: Grass004 colour + normal map, tiled every 2.5 m, toned to 3.jpg's deeper olive (tint 0.5/0.54/0.4).
+- **No mid-frame shader builds**: trees and lawn are compiled asynchronously (every pass), and their textures load first.
+  - Classic: the 606 ms first-draw task after ready is gone.
+  - New renderer: the trees' 7.5 s freeze is gone.
+- **Measured** (classic, 1600×900 at 1.25×, GPU-synced, trees on → off):
+
+| View | Trees on | Trees off |
+|---|---|---|
+| Hero | 16.0 ms | 15.3 ms |
+| Overview | 12.9 ms | 11.5 ms |
+| Three-quarter | 13.7 ms | 13.8 ms |
+
+  The machine was loaded during this session; these are relative numbers. Classic ready 1.6–2.3 s, no errors.
+- **Views**: tools/out/m5_views.jpg (hero, three-quarter, aerial, rear, golden, night), m5_three4_webgpu.jpg.
+- **Found, not caused by M5 (open)**:
+  1. The new renderer has a ~3.4 s long task right after start-up even with `?trees=0`. My M2b/M4 checks timed frame and idle callbacks only and missed it; the likely cause is the photo-texture swap (mipmaps built with render passes). This blocks making the new renderer the default.
+  2. On the classic renderer the golden-hour switch changes the tone curve (Neutral → AgX), which recompiles every shader (multi-second task in a scripted run). It is existing behaviour on the live site.
+- **Not done in M5**: distant terrain / skyline ring and height fog (the 9.webp haze), and wind (the site renders on demand, so static trees cost nothing while idle).

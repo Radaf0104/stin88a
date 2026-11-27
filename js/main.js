@@ -17,6 +17,8 @@ import { createIsolation } from "./isolate.js";
 import { createSpaces } from "./spaces.js";
 import { GPU, FORCE_WEBGL, TSL } from "./gpu.js";
 import { createLookTSL } from "./materialsTSL.js";
+import { createFoliage, scatterTrees } from "./foliage.js";
+import { MeshBVH, acceleratedRaycast } from "three-mesh-bvh";
 
 // ---------- text ----------
 const STR = {
@@ -665,6 +667,73 @@ const massingReady = createMassing({ parent: ground }).then((m) => {
   try { invalidate(300); } catch {} // (if it arrives before the render loop is set up, the first frame draws it anyway)
   return m;
 }).catch((e) => { console.warn("massing", e); return null; });
+// (M5) Trees (js/foliage.js) and a photographed lawn (CC0 ambientCG Grass004), once the site plan and massing are in.
+// Trees stand on lawn only, clear of the building, the neighbour blocks, roads / pads and the lawn in front of the
+// terrace facade (the hero view, like 3.jpg, keeps an open lawn with trees to the sides and behind). In `ground`, so
+// they come and go with the site in the floor / room views. ?trees=0 leaves them out (A/B).
+// The trees and the re-textured lawn are compiled (async, for every pass) before they are shown, so their shaders are
+// never built in the middle of a frame (new renderer: seconds of freeze; classic: ~0.6 s).
+async function compileQuietly(obj) {
+  const all = [];
+  for (const p of compilePasses()) compileFor(p, () => { if (p.stencil && compilePasses().length > 1) return; all.push(renderer.compileAsync(obj, camera, scene)); });
+  await Promise.all(all).catch(() => {});
+}
+let foliage = null;
+const foliageReady = Promise.all([sitePlanReady, massingReady]).then(async ([site, mass]) => {
+  if (!site || qs.get("trees") === "0" || !loadKtx) return null;
+  const t0 = performance.now();
+  const lawn = site.getObjectByName("siteplan_grass");
+  // lawn: the photo + its normal map, tiled every 2.5 m on the site plan's metre UVs ((m + 256) / 512), toned to the
+  // deeper olive of 3.jpg's lawn (#6e7338 average); the normal map lets the blades catch the low morning sun
+  const texDir = phone ? "data/levels/tex_m/" : "data/levels/tex/";
+  const lawnReady = lawn ? Promise.all([loadKtx(texDir + "lawn_grass.ktx2"), loadKtx(texDir + "lawn_grass_nor.ktx2")]).then(async ([t, n]) => {
+    for (const x of [t, n]) {
+      x.wrapS = x.wrapT = THREE.RepeatWrapping; x.anisotropy = TEX_ANISO;
+      x.repeat.set(512 / 2.5, 512 / 2.5); x.offset.set(-256 / 2.5, -256 / 2.5);
+    }
+    t.colorSpace = THREE.SRGBColorSpace; n.colorSpace = THREE.NoColorSpace;
+    // a re-textured copy, compiled first, then swapped in (the old material keeps drawing meanwhile)
+    const m = lawn.material.clone();
+    Object.assign(m, { map: t, normalMap: n, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.92 });
+    m.color.setRGB(0.5, 0.54, 0.4); grade.patch(m);
+    const old = lawn.material; lawn.material = m; const shown = lawn.visible;
+    lawn.visible = true; await compileQuietly(lawn); lawn.visible = shown;
+    const i = sitePlanMats.indexOf(old); if (i >= 0) sitePlanMats[i] = m;
+    invalidate(300);
+  }).catch((e) => console.warn("lawn", e)) : null;
+  // ground hits: the site plan meshes get a bounding-volume tree (three-mesh-bvh, already loaded for walking), one ray
+  // per candidate (plain raycasts took ~1.2 s per pass over ~1000 points)
+  const hitables = []; site.traverse((o) => o.isMesh && hitables.push(o));
+  for (const o of hitables) { o.geometry.boundsTree ??= new MeshBVH(o.geometry); o.raycast = acceleratedRaycast; }
+  const keepBoxes = [buildingBox.clone().expandByScalar(5)];
+  mass?.group?.traverse?.((o) => { if (o.isMesh) keepBoxes.push(new THREE.Box3().setFromObject(o).expandByScalar(3)); });
+  const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3(), hits = new Map();
+  ray.firstHitOnly = true;
+  const hitAt = (x, z) => {
+    const k = x + "," + z; if (hits.has(k)) return hits.get(k);
+    from.set(x, 200, z); ray.set(from, down);
+    const h = ray.intersectObjects(hitables, false).sort((a, b) => a.distance - b.distance)[0] ?? null;
+    hits.set(k, h); return h;
+  };
+  const heroLawn = (x, z) => x > -32 && x < 32 && z > buildingBox.max.z && z < buildingBox.max.z + 60;
+  const places = scatterTrees({
+    bounds: new THREE.Box3().setFromObject(lawn ?? site),
+    isLawn: (x, z) => hitAt(x, z)?.object === lawn,
+    groundY: (x, z) => hitAt(x, z)?.point.y ?? null,
+    keepOut: (x, z) => heroLawn(x, z) || keepBoxes.some((b) => x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z),
+  });
+  timings.treeScatter = Math.round(performance.now() - t0);
+  const f = createFoliage({ places, loadKtx, phone, anisotropy: TEX_ANISO });
+  for (const m of f.materials) grade.patch(m);
+  try { look?.apply(f.group); } catch {} // (look is declared further down; the trees may arrive first)
+  await f.ready; // textures in before the first compile, so the shaders are built once
+  await compileQuietly(f.group);
+  ground.add(f.group); foliage = f;
+  await lawnReady;
+  invalidate(300);
+  timings.trees = places.length;
+  return f;
+}).catch((e) => { console.warn("trees", e); return null; });
 const cap = new THREE.Mesh(new THREE.PlaneGeometry(600, 600).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
   color: 0x5d564f, roughness: 1, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
   stencilFail: THREE.ReplaceStencilOp, stencilZFail: THREE.ReplaceStencilOp, stencilZPass: THREE.ReplaceStencilOp,
