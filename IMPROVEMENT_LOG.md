@@ -344,3 +344,11 @@ Approved by the user ("Yes, add them", relayed by mastercontrol on 2026-11-27). 
 - **Measured**: overview unchanged (369 calls, 735,348 triangles). The floor 4 view adds 3 calls and 1.5k triangles. Hero 61/145/231, RGB 129/135/129 in this browser session, identical with the accents hidden (the earlier 65 was a different browser session). Ready 1.38 s (was ~1.18 s): 3 new shader programs compile at start-up. The accents JSON is preloaded (arrives at 21 ms). No console errors.
 - Renders: tools/out/r22_K405b_before.jpg / r22_K405b_after.jpg (shelf LEDs, wardrobe contact shadow), r22_K405_before.jpg / r22_K405_after.jpg (bed contact shadow).
 - `STIN.accents` debug handle: `setRoom(label, k)`, `setGlow(g)`, `setPlain(k)`.
+
+## Round 23 — re-measure after the accents; start-up regression fixed
+Phone profile measured in the browser pane's phone preset (375x812, phone user agent and touch; pixel ratio 1.25, 1024 shadow map, half-size textures). Frames are GPU-synced (readPixels after each render) on this machine's GPU. No CPU throttling is available in this pane, so the numbers compare builds, not real phones.
+- **Overview**: 369 calls, about 11 ms per frame; accents hidden there, unchanged.
+- **Floor 4**: 446 calls with accents, 443 without; 9.8 ms against 9.9 ms (noise).
+- **K.405 walk**: 138 calls with accents, 135 without; 6.3–8.6 ms against 6.7 ms (noise).
+- **Regression**: start-up. The accents' 3 shader programs compiled before the first frame: phone ready 1.45 s, shader pre-compile 466 ms.
+- **Fix**: the accents never show in the loading render or the overview, so `buildAccents()` now runs right after start-up. It patches their materials, replays any light-switch states set meanwhile (`accentRoomK`), compiles their shaders off-screen (`compileAsync` on each mesh, shown only for that synchronous moment), then lets `showBand` decide visibility. Phone ready 1.32 s, pre-compile 367 ms; accents in place at ~1.7 s. No console errors.

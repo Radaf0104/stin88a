@@ -1879,16 +1879,31 @@ env.set("day", radius);
 // in frame(): the Level 1 view keeps the ground and roads, other floor views hide them).
 // Style rooms (js/roomstyle.js): K.401/405/407/413/416 get their own materials and interactions; created before the
 // isolation / grade patches below, so their new materials get both
-// (round 22) room accents: contact shadows, plinth and shelf LEDs in every guest room (js/accents.js). Added before
-// the isolation / grade patches below, so they are cut and graded like everything else.
-if (USE_GLB) try { accents = await createAccents({ root, levelObjects }); } catch (e) { console.warn("room accents", e); }
+// (round 22) room accents: contact shadows, plinth and shelf LEDs in every guest room (js/accents.js). They never show
+// in the loading render or the building overview, so (round 23) they are built just after start-up - see buildAccents.
+// The style rooms' light switch dims their LEDs too; switch states set before then wait in accentRoomK.
+const accentRoomK = new Map(Object.keys(STYLE_ROOMS).map((label) => [label, 0.15])); // (their lights start switched off)
 let roomStyle = null;
 try {
   if (USE_GLB) roomStyle = createRoomStyle({ scene, camera, renderer, objects: levelObjects, spaces, units, levelY, planToWorld, inPoly,
     rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); },
-    onLights: (label, e) => accents?.setRoom(label, 0.15 + 0.85 * e) }); // (the style rooms' light switch dims their LEDs too)
+    onLights: (label, e) => { accentRoomK.set(label, 0.15 + 0.85 * e); accents?.setRoom(label, 0.15 + 0.85 * e); } });
 } catch (e) { console.warn("room styles", e); }
-for (const label of Object.keys(STYLE_ROOMS)) accents?.setRoom(label, 0.15); // (their lights start switched off)
+async function buildAccents() {
+  const a = await createAccents({ root, levelObjects });
+  if (!a) return;
+  const meshes = levelObjects.filter((o) => o.userData.style_room === "accents");
+  for (const m of meshes) { iso.patch(m.material); grade.patch(m.material); }
+  for (const [label, k] of accentRoomK) a.setRoom(label, k);
+  a.setGlow(env.time?.glow ?? 0); a.setPlain(isoK);
+  // compile their 3 shaders off-screen (shown for this synchronous moment only, no frame is drawn in between), then
+  // let the current view decide what is visible
+  const compiling = meshes.map((m) => { m.visible = true; const p = renderer.compileAsync(m, camera, scene); m.visible = false; return p; });
+  showBand(band[0], band[1]);
+  accents = a;
+  await Promise.all(compiling).catch(() => {});
+  invalidate(300);
+}
 const notIsolated = new Set([...unitMeshes, ...bands, roomGlow, capMesh]);
 const inGround = (o) => { for (let p = o; p; p = p.parent) if (p === ground) return true; return false; };
 iso.patchScene(scene, (o) => notIsolated.has(o) || inGround(o));
@@ -1917,6 +1932,7 @@ mark("ready"); // handy for debugging in the browser console
 ready = true;
 requestAnimationFrame(frame);
 leaveHeroWhenReady(); // the loading-screen render fades into the 3D view (and the intro camera move starts)
+if (USE_GLB) setTimeout(() => buildAccents().catch((e) => console.warn("room accents", e)), 0); // (round 23: after start-up)
 // #K405-light: open that style room (in that style) once the intro has faded
 { const hu = roomStyle?.fromHash(); if (hu) setTimeout(() => selectUnit(hu), 3200); }
 ui.loading.classList.add("done");
