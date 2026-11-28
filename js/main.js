@@ -884,6 +884,9 @@ iso.setBounds(buildingBox, 6);
 const spaces = createSpaces({ model, units, levelY, root, buildingBox, doorChunks, doorLeaves: USE_GLB ? doorLeaves : null,
   probe: null }); // (the probe found balcony railings for walking; walk mode was removed)
 for (const d of spaces.doors) { d.pivot.userData.y = [d.box.min.y, d.box.max.y]; levelObjects.push(d.pivot); } // drawn per floor like the rest
+// (client, 2026-11-28: "the door function does not follow floor plan") door behaviour from the Revit plan
+// (data/door_plan.json, tools/build-door-plan.mjs): the balcony doors that slide in the plan slide here too
+try { timings.planDoors = spaces.applyPlan(await fetch("data/door_plan.json").then((r) => r.json())); } catch (e) { console.warn("door plan", e); }
 
 // (round 16) The overview draws the exterior doors (balcony glass, fixed leaves) closed and never moves them, yet each
 // leaf is its own hinged mesh with 2-4 materials: ~90 draw calls. A static stand-in - all those leaves joined per

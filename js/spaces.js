@@ -220,7 +220,43 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
     return [...st.loaded].flatMap((s) => [...(s.maskSub ?? []), ...(s.rooms ?? []).filter((p) => !loadedRooms.has(p))]);
   };
   function closeAll() { // every door shut at once (leaving walk mode)
-    for (const d of doors) { d.k = d.target = 0; d.pivot.rotation.y = 0; d.pivot.position.setComponent(d.wide, d.hingeBase ?? d.box.min.getComponent(d.wide) + 0.03); }
+    for (const d of doors) {
+      d.k = d.target = 0; d.pivot.rotation.y = 0; d.pivot.position.setComponent(d.wide, d.hingeBase ?? d.box.min.getComponent(d.wide) + 0.03);
+      if (d.thinBase !== undefined) d.pivot.position.setComponent(d.thin, d.thinBase);
+    }
+  }
+  // (client, 2026-11-28: "the door function does not follow floor plan") door behaviour from the Revit plan
+  // (data/door_plan.json, tools/build-door-plan.mjs). slide: the balcony pairs that are 2-panel sliding doors (XO) in
+  // the plan: the fixed panel stays, the other slides across it, just inside (it no longer swings out as a French leaf).
+  function applyPlan(plan) {
+    const toPlan = (w) => [w.x - rp.x, -(w.z - rp.z)]; // world -> Revit plan axes
+    const planAxis = (d) => (d.wide === 0 ? 0 : 1);   // the wide axis in plan terms (x, or y = world -z)
+    let n = 0;
+    for (const [id, p] of Object.entries(plan?.slide ?? {})) {
+      const leaves = doors.filter((d) => String(d.pair) === id);
+      if (leaves.length !== 2) continue;
+      const pa = planAxis(leaves[0]);
+      leaves.sort((a, b) => toPlan(a.centerW)[pa] - toPlan(b.centerW)[pa]); // [min end, max end]
+      const op = p.operable === "min" ? leaves[0] : leaves[1], fixed = op === leaves[0] ? leaves[1] : leaves[0];
+      op.slide = true; op.out = true; op.width = Math.min(op.width, 1.2);
+      op.slideDir = Math.sign(fixed.centerW.getComponent(op.wide) - op.centerW.getComponent(op.wide)) || 1;
+      op.thinBase = op.pivot.position.getComponent(op.thin); op.thinShift = 0.06; op.thinSign = 1;
+      op.dur = 0.9; op.ease = "quad";
+      fixed.fixed = true; n++;
+    }
+    // swing: each swinging leaf whose hinge is within 0.3 m of a plan hinge opens to the plan's side (the side its
+    // swing arc is drawn on), instead of the rule "entrance into the room, bathroom door into the bathroom"
+    for (const p of Object.values(plan?.swing ?? {})) {
+      let best = null, bd = 0.3;
+      for (const d of doors) {
+        if (d.slide || d.fixed) continue;
+        const h = d.pivot.getWorldPosition(new THREE.Vector3()), q = [h.x - rp.x, -(h.z - rp.z)];
+        const dist = Math.hypot(q[0] - p.hinge[0], q[1] - p.hinge[1]);
+        if (dist < bd) { bd = dist; best = d; }
+      }
+      if (best) { best.planSide = new THREE.Vector3(p.side[0], 0, -p.side[1]).normalize(); n++; } // plan -> world (y -> -z)
+    }
+    return n;
   }
   function setCurrent(space) {
     st.current = space; st.loaded = new Set(space ? [space] : []); st.entrance = null;
@@ -266,7 +302,11 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
       const dur = d.dur ?? 0.55;
       d.k = d.target > d.k ? Math.min(d.target, d.k + dt / dur) : Math.max(d.target, d.k - dt / dur);
       const e = d.ease === "quad" ? (d.k < 0.5 ? 2 * d.k * d.k : 1 - (-2 * d.k + 2) ** 2 / 2) : d.k * d.k * (3 - 2 * d.k);
-      if (d.slide) { d.pivot.position.setComponent(d.wide, (d.hingeBase ?? d.box.min.getComponent(d.wide) + 0.03) + (d.slideDir ?? 1) * e * (d.width - 0.12)); }
+      if (d.slide) {
+        d.pivot.position.setComponent(d.wide, (d.hingeBase ?? d.box.min.getComponent(d.wide) + 0.03) + (d.slideDir ?? 1) * e * (d.width - 0.12));
+        // (plan sliders) the moving panel steps just inside the fixed one first, then runs along it
+        if (d.thinShift) d.pivot.position.setComponent(d.thin, d.thinBase + d.thinSign * d.thinShift * Math.min(1, e * 4));
+      }
       else d.pivot.rotation.y = (d.swingFlip ?? 1) * d.sign * e * Math.PI * 0.5 * (d.swing ?? 0.92);
       moved = true;
     }
@@ -294,10 +334,14 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
   // Room view: a click opens / closes any door of the room. Entrance doors swing into the room, bathroom doors into
   // the bathroom (away from the room's middle); balcony glass slides.
   function toggle(door, roomCenter) {
-    const set = door.pair ? doors.filter((d) => d.pair === door.pair) : [door];   // French doors: both leaves
-    if (door.target === 1) { for (const d of set) d.target = 0; return; }
+    const set = door.pair ? doors.filter((d) => d.pair === door.pair && !d.fixed) : [door]; // French doors: both leaves (a plan slider: its moving panel)
+    if (set.some((d) => d.target === 1)) { for (const d of set) d.target = 0; return; } // (a plan slider's fixed panel closes it too)
     const away = door.role === "entrance" ? door.centerW.clone().multiplyScalar(2).sub(roomCenter) : roomCenter;
-    for (const d of set) { d.sign = swingSign(d, away); d.target = 1; }
+    for (const d of set) {
+      // (plan swing) open toward the plan's side: "away" from a point on the other side of the leaf
+      d.sign = swingSign(d, d.planSide ? d.centerW.clone().sub(d.planSide) : away); d.target = 1;
+      if (d.thinShift) d.thinSign = Math.sign(roomCenter[axis[d.thin]] - d.centerW[axis[d.thin]]) || 1; // slide on the room side
+    }
   }
   const doorMeshes = () => doors.filter((d) => d.role === "entrance" && st.current && d.links.includes(st.current)).flatMap((d) => { const ms = []; d.pivot.traverse((m) => { if (m.isMesh) { m.userData.door = d; ms.push(m); } }); return ms; }); // (hinged leaves: pivot > leaf node > meshes)
 
@@ -334,7 +378,7 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
 
   return {
     spaces, doors, rejected, doorGroup, state: st, lobby, unitSpace, spaceAt, levelOf, allowed, update, animate, toggle, click, doorMeshes,
-    setCurrent, closeAll, maskPolys, maskSub, stairStart, entranceStart, isStairs, stairWell,
+    setCurrent, closeAll, applyPlan, maskPolys, maskSub, stairStart, entranceStart, isStairs, stairWell,
     footprint: () => { const b = buildingBox; return [[[b.min.x - 0.6, b.min.z - 0.6], [b.max.x + 0.6, b.min.z - 0.6], [b.max.x + 0.6, b.max.z + 0.6], [b.min.x - 0.6, b.max.z + 0.6]]]; },
   };
 }

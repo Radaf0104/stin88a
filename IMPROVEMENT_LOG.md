@@ -688,3 +688,28 @@ Client (with screenshots of the room card, the levels panel and K.305 at night, 
   - Back goes room → level → overview.
   - No failed requests, no console errors.
 - Returning visitors may see old files for up to 10 minutes (max-age 600).
+
+## Black land, hover, transitions, room cutaway, plan audit (v6-webgpu, 2026-11-28)
+Client: "1. whenever I went back from the section/room overview to building overview, the land goes full black. 2. on building overview ... hover over the level (eg. lv 2) it lights up that whole floor instead of the one specific room. and during the level overview (eg lv 2) section, the specific room lights up. 3. ... a fade out and in whenever user changes tab/view as a loading screen. make a loading bar as well. 4. the furniture placement are not accurate, and the door function does not follow floor plan. 5. during room overview, do not hide furniture (bed frame, drawer, or railing. only hide the wall and TV."
+- **1. Black land, root cause**: the lawn photo is swapped in with `Material.clone()`, which copies `userData` through JSON, so the stored day colour (a `THREE.Color`, set once a floor view had been shown) became a plain number.
+  - Going back, the floor-view blend copied that number into the colour → NaN → black lawn. It happens whenever a level or room is opened before the lawn photo has finished loading (common on phones).
+  - Fix: the copy gets its own day colour and the blend is re-applied; the blend also never uses a non-Color day colour.
+  - Reproduced and checked: a level → room → overview right after load now keeps the lawn green.
+- **2. Hover**: in the building overview a whole storey gets a warm tint (opacity 0.4, was a faint 0.28), from the 3D view or from the Levels list. In a level view the single room lights up (stronger: opacity 0.75, glow +0.6), from the 3D view or the room chips. Highlights are cleared on every view change and when the pointer leaves the canvas.
+- **3. Transitions**: every view change from the UI goes through `go()`: overview, levels, rooms (list, chips, 3D picks), Back, Gallery and Room photos.
+  - The scene fades under a dimmed, blurred veil with a small loading card (the landing loader's style, 8 px bar with the shine).
+  - The switch happens while covered: the camera move and the white-view fade are finished at once, and the new view's first frames are drawn before the veil lifts.
+  - ~0.5–0.9 s (measured in the hidden test pane). Clicks during a transition are ignored; reduced motion shortens it.
+- **5. Room cutaway**: only walls and the TV are cut. Furniture (merged `*_furniture` meshes and every piece with a kind: bed, casework, chair, lamp, curtain…) and railings stay.
+  - These meshes get their own material copy, marked `isoKeep` before patching (the copies are made at load, like the lightmap copies).
+  - js/isolate.js reads the flag as a per-material uniform, so it is the same shader program: still 35 programs at start-up.
+  - The style rooms' furniture finishes (roomstyle.js) are marked the same way; their walls, floors, ceiling and doors are cut.
+- **4. Plan audit** (`tools/audit-plan.mjs`, plus a top-down scan of every room's bed linen in the page, `tools/out/web_beds.json`, against `stin88a-revit-data`):
+  - **Beds**: all 44 guest rooms stand where the plan has them, within 0.3 m and in the same orientation. K.408 first looked empty; it is fully furnished, hidden behind its bathroom walls from the room-view camera.
+  - **Desk chairs and instanced fittings** match. In the 3.5 m rooms the fittings sit inside merged meshes, which were checked by eye.
+  - **Doors, the real mismatch**: 10 balcony doors (K.301/303/305/307/309, K.401/403/405/407/409) are 2-panel sliding doors in the plan (`QARC_Al_Slide_XO`). tools/blender/04_join.py had made them outward French doors.
+    - New `tools/build-door-plan.mjs` → `data/door_plan.json`; `spaces.applyPlan()` turns each pair back into the plan's slider: one panel fixed, the other steps 6 cm inside and slides 0.68 m across it.
+    - The sliding side follows the family's mirroring / rotation; whether that is X or O is not yet confirmed against the plan.
+  - **Swinging doors**: the site's rule (entrance doors into the room, bathroom doors into the bathroom) agrees with every door's Revit facing side. The hinge positions come from the Revit geometry.
+    - A per-door export of the plan's swing arcs was requested from the Revit agent (`door_swings.json`). `applyPlan()` already uses it when present (rerun `node tools/build-door-plan.mjs`).
+- Checked (local, classic): desktop and phone, the transition veil, floor / room hover, K.305 / K.405 / K.202 cutaways with furniture kept, the sliding balcony doors, no console errors; ready ~1.4–1.5 s in the test pane (live 1.3 s in the same pane).
