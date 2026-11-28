@@ -713,3 +713,8 @@ Client: "1. whenever I went back from the section/room overview to building over
   - **Swinging doors**: the site's rule (entrance doors into the room, bathroom doors into the bathroom) agrees with every door's Revit facing side. The hinge positions come from the Revit geometry.
     - A per-door export of the plan's swing arcs was requested from the Revit agent (`door_swings.json`). `applyPlan()` already uses it when present (rerun `node tools/build-door-plan.mjs`).
 - Checked (local, classic): desktop and phone, the transition veil, floor / room hover, K.305 / K.405 / K.202 cutaways with furniture kept, the sliding balcony doors, no console errors; ready ~1.4–1.5 s in the test pane (live 1.3 s in the same pane).
+- **Swing doors from the plan arcs** (Revit agent, `stin88a-revit-data/door_swings.json`: hinge = the plan's swing-arc centre, side = where the arc lies):
+  - All 112 swinging doors matched to their leaf on the site (same floor, door centre within 0.4 m).
+  - **63 had the hinge at the wrong end of the leaf** (the exported leaf origin). They now hang from a new pivot at the plan's hinge.
+  - Every leaf opens to the plan's side. Checked: 112 of 112 open toward the arc side, 0 wrong.
+  - The plan confirms the earlier rule: bathroom doors into the bathroom (43), entrance doors into the room, the 3 single balcony doors out.

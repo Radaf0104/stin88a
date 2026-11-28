@@ -244,17 +244,32 @@ export function createSpaces({ model, units, levelY, root, buildingBox, doorChun
       op.dur = 0.9; op.ease = "quad";
       fixed.fixed = true; n++;
     }
-    // swing: each swinging leaf whose hinge is within 0.3 m of a plan hinge opens to the plan's side (the side its
-    // swing arc is drawn on), instead of the rule "entrance into the room, bathroom door into the bathroom"
+    // swing (Revit agent's door_swings.json: hinge = centre of the plan's swing arc, side = where the arc lies): the
+    // leaf at the plan door (same floor, centre within 0.4 m) gets the plan's hinge end and opens to the plan's side.
+    // About half the exported leaves had their hinge (the leaf object's origin) at the other end of the leaf: those get
+    // a new pivot at the plan's hinge (the leaf hangs from it unchanged) and turn the other way round.
+    const v = new THREE.Vector3();
     for (const p of Object.values(plan?.swing ?? {})) {
-      let best = null, bd = 0.3;
+      if (!p.point) continue;
+      let best = null, bd = 0.4;
       for (const d of doors) {
-        if (d.slide || d.fixed) continue;
-        const h = d.pivot.getWorldPosition(new THREE.Vector3()), q = [h.x - rp.x, -(h.z - rp.z)];
-        const dist = Math.hypot(q[0] - p.hinge[0], q[1] - p.hinge[1]);
+        if (d.slide || d.fixed || d.planSide) continue;
+        if (Math.abs(d.centerW.y - rp.y - p.point[2] - 1) > 1.4) continue; // (leaf centre ~1 m above its floor)
+        const c = toPlan(d.centerW), dist = Math.hypot(c[0] - p.point[0], c[1] - p.point[1]);
         if (dist < bd) { bd = dist; best = d; }
       }
-      if (best) { best.planSide = new THREE.Vector3(p.side[0], 0, -p.side[1]).normalize(); n++; } // plan -> world (y -> -z)
+      if (!best) continue;
+      const d = best;
+      d.planSide = new THREE.Vector3(p.side[0], 0, -p.side[1]).normalize(); // plan -> world (y -> -z)
+      const hw = d.pivot.getWorldPosition(v.set(0, 0, 0)).clone(), hp = toPlan(hw);
+      if (Math.hypot(hp[0] - p.hinge[0], hp[1] - p.hinge[1]) > (p.width ?? d.width) * 0.5) { // hinge on the wrong end
+        const leaf = d.pivot, parent = leaf.parent, wrap = new THREE.Group();
+        const nh = hw.clone(); nh.setComponent(d.wide, 2 * d.centerW.getComponent(d.wide) - hw.getComponent(d.wide));
+        parent.add(wrap); wrap.position.copy(parent.worldToLocal(nh)); wrap.updateMatrixWorld(true); wrap.attach(leaf);
+        wrap.userData = { ...leaf.userData, planHinge: true };
+        d.pivot = wrap; d.hingeBase = wrap.position.getComponent(d.wide); d.swingFlip = -(d.swingFlip ?? 1); d.hingeMoved = true;
+      }
+      n++;
     }
     return n;
   }

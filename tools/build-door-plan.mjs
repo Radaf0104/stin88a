@@ -23,7 +23,7 @@ const swingsFile = "../stin88a-revit-data/door_swings.json";
 if (fs.existsSync(swingsFile)) {
   for (const d of JSON.parse(fs.readFileSync(swingsFile, "utf8"))) {
     if (d.sliding || !d.hinge || !d.swing_side) continue;
-    out.swing[d.id] = { hinge: d.hinge, side: d.swing_side, room: d.swing_room ?? null, other: d.other_room ?? null };
+    out.swing[d.id] = { point: d.point, width: d.width_m, hinge: d.hinge, side: d.swing_side, room: d.swing_room ?? null, other: d.other_room ?? null };
   }
 }
 fs.writeFileSync("data/door_plan.json", JSON.stringify(out));
