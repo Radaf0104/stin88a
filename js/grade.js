@@ -133,7 +133,7 @@ export function createSky(renderer) {
     mesh,
     update(scene) {
       const bg = scene.background;
-      if (!bg || !bg.isTexture) { mesh.visible = false; held = null; return; }
+      if (!bg || !bg.isTexture || bg.userData.flat) { mesh.visible = false; held = null; return; } // (flat: a 2D backdrop, drawn by three)
       const tex = cubeOf(bg), real = tex.isCubeTexture && !tex.isRenderTargetTexture;
       mat.uniforms.envMap.value = tex;
       mat.uniforms.flipEnvMap.value = real ? -1 : 1;

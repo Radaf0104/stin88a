@@ -6,6 +6,7 @@ import { materialFor, addBoxUVs, setLampGlow, allMaterials, startTextureLoading 
 // (js/landscape.js - generated trees, hills, grass - replaced by the site plan; kept in the repo for reference)
 import { createEnvironment, TIMES } from "./environment.js";
 import { createMoodLights, createWindowLight } from "./lighting.js";
+import { createLuxe, backdropTexture } from "./luxe.js";
 import { createMassing } from "./massing.js";
 import { createRoomStyle, STYLE_ROOMS } from "./roomstyle.js";
 import { createAccents } from "./accents.js";
@@ -192,6 +193,7 @@ function applyRoomNight() {
     if (on === lastRoomNight) return;
     lastRoomNight = on;
     if (on) roomStyle?.setLights?.(true);
+    luxe?.setNight(on);
     if (isoK > 0) setIsoK(isoK); else env.setPlainNight(on);
     invalidate(300);
   } catch {}
@@ -1028,6 +1030,8 @@ function setCut(y, caps = true) {
 const WHITE_BG = new THREE.Color(1.6, 1.6, 1.6); // > 1 so it stays pure white after the tone curve
 // (UI round) a room inspected at night sits on a deep night blue instead of white, lit by its own lamps and LEDs
 const NIGHT_BG = new THREE.Color(0x0d111c);
+const LUXE_BG = backdropTexture(); LUXE_BG.userData.flat = true; // (room view by day: #8FA3B8 -> #5E7590)
+const LUXE_CAP = 0xe9e1d6;
 const roomNight = () => !!state.unit && env.current === "night";
 let isoK = 0, isoAnim = null, savedSky = null;
 // The lamps' strength. Floor views by day: they fade out with the outside (plain studio light). (client, 2026-11-27)
@@ -1057,7 +1061,7 @@ function setIsoK(k) {
   grade.enabled = k < 0.5; // plain white views: no grade (as before)
   grade.bloom = k === 0;    // nor the bloom brightening (bloom was off there too)
   if (savedSky) {
-    if (k >= 1) scene.background = night ? NIGHT_BG : WHITE_BG;
+    if (k >= 1) { scene.background = night ? NIGHT_BG : roomView ? LUXE_BG : WHITE_BG; if (roomView && !night) scene.backgroundIntensity = 1; } // (room view: the cool blue backdrop, at its own colours)
     else { scene.background = savedSky.bg; scene.backgroundIntensity = savedSky.intensity * (1 + 14 * k * k); } // sky washes out to white
     if (scene.fog) scene.fog.density = savedSky.fog * (1 - k);
   }
@@ -1215,7 +1219,11 @@ function selectUnit(u) {
   const b = u.box, size = Math.max(b.max.x - b.min.x, b.max.z - b.min.z), d = size * 1.5 + 7;
   const target = u.center.clone(); target.y = levelY[u.level] + 1;
   controls.minDistance = 2;
-  flyTo(new THREE.Vector3(target.x + d * 0.55, target.y + d * 0.95, target.z + d * 0.75), target, 1.2);
+  // (2026-11-28, luxury-tower look) a narrow-angle "isometric" camera: fov 24 (was 38) from 1.6x further back
+  // (portrait phones: fov 32 and closer in - flyTo already moves back up to 2.4x for portrait screens)
+  const portrait = camera.aspect < 1, k = portrait ? 0.62 : 1.6;
+  camera.fov = portrait ? 32 : 24; camera.updateProjectionMatrix();
+  flyTo(new THREE.Vector3(target.x + d * 0.55 * k, target.y + d * 0.95 * k, target.z + d * 0.75 * k), target, 1.2);
   showCard(u);
   renderUI();
 }
@@ -1313,7 +1321,9 @@ function setRoomView(u, sp) {
   setCeilings(false);
   roomStyle?.enter(u, tv);
   const capHex = roomStyle?.capColor(u); // style rooms: light wall caps (#e3dcd2), like the reference's section cut
-  if (capHex) cap.material.color.set(capHex);
+  cap.material.color.set(capHex ?? LUXE_CAP); // (2026-11-28) every room view: light ivory caps, crisp on the blue backdrop
+  luxe?.enter(u, levelY[u.level], roomNight());
+  if (isoK > 0) setIsoK(isoK); // (from a floor view the white fade is already done: the backdrop is set here)
   iso.uniforms.uIsoCutY.value = levelY[u.level] + 0.05; // the walls in front go down to just above the floor
   updateRoomCut();
 }
@@ -1321,7 +1331,9 @@ function clearRoomView() {
   if (!roomView) return;
   if (roomView.tv) { roomView.tv.on = false; roomView.tv.screen.visible = false; }
   roomView = null;
-  roomStyle?.leave(); cap.material.color.set(0x5d564f);
+  roomStyle?.leave(); luxe?.leave(); cap.material.color.set(0x5d564f);
+  if (isoK > 0) setIsoK(isoK); // (back to the white floor-view backdrop)
+  if (camera.fov !== 38 && !state.inside) { camera.fov = 38; camera.updateProjectionMatrix(); }
   iso.uniforms.uIsoCutA.value.set(0, 0, 0, 0); iso.uniforms.uIsoCutB.value.set(0, 0, 0, 0); iso.uniforms.uIsoCutY.value = 1e6;
   setCeilings(true);
   spaces.closeAll();
@@ -1948,7 +1960,7 @@ env.set("day", radius);
 // in the loading render or the building overview, so (round 23) they are built just after start-up - see buildAccents.
 // The style rooms' light switch dims their LEDs too; switch states set before then wait in accentRoomK.
 const accentRoomK = new Map(Object.keys(STYLE_ROOMS).map((label) => [label, 0.15])); // (their lights start switched off)
-let roomStyle = null;
+let roomStyle = null, luxe = null;
 try {
   if (USE_GLB) roomStyle = createRoomStyle({ scene, camera, renderer, objects: levelObjects, spaces, units, levelY, planToWorld, inPoly,
     rootPos: root.position, tooltip: ui.tooltip, invalidate, patch: (m) => { iso.patch(m); grade.patch(m); },
@@ -1956,6 +1968,12 @@ try {
     borrowLights: (n) => mood.hold(n), releaseLights: (ls) => mood.release(ls), // (round 26: no lights of its own)
     loadTexture: loadKtx }); // (round 28: CC0 linen / boucle / oak / floor, fetched on the first style room opened)
 } catch (e) { console.warn("room styles", e); }
+// (2026-11-28) the luxury-tower room-view look for every guest room (js/luxe.js): walnut floor, ivory plaster, cove light,
+// floor-wall shading, desktop floor reflection. The template rooms get their floor and walls from the Luxury palette.
+try {
+  luxe = createLuxe({ scene, parent: clipped, renderer, rootPos: root.position, patch: (m) => { iso.patch(m); grade.patch(m); },
+    isStyleRoom: (u) => !!roomStyle?.isStyleRoom(u), phone, gpu: !!GPU, invalidate });
+} catch (e) { console.warn("luxe", e); }
 async function buildAccents() {
   const a = await createAccents({ root, levelObjects });
   if (!a) return;
@@ -2078,6 +2096,7 @@ requestAnimationFrame(frame);
 leaveHeroWhenReady(); // the loading-screen render fades into the 3D view (and the intro camera move starts)
 if (USE_GLB) setTimeout(() => buildAccents().catch((e) => console.warn("room accents", e)), 0); // (round 23: after start-up)
 if (GPU) setTimeout(warmUpRest, 600); // (M2: after the intro has started)
+setTimeout(() => luxe?.warm((g) => compileQuietly(g)), 1500); // (the room-view look: its shaders, in the background)
 // #K405-light: open that style room (in that style) once the intro has faded
 { const hu = roomStyle?.fromHash(); if (hu) setTimeout(() => selectUnit(hu), 3200); }
 ui.loading.classList.add("done");

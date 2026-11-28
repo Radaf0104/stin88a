@@ -17,12 +17,18 @@ import * as THREE from "three";
 import { makeTextures } from "./proctex.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
-export const STYLE_ROOMS = { "K.401": "signature", "K.405": "light", "K.407": "signature", "K.413": "signature", "K.416": "signature" };
+// (client, 2026-11-28: "apply it to room 401, 405, 407, 413, and 416, and make them as a template") the luxury-tower
+// look (research/luxury-tower-reference.md) is the five template rooms' default palette; the other palettes stay
+export const STYLE_ROOMS = { "K.401": "luxury", "K.405": "luxury", "K.407": "luxury", "K.413": "luxury", "K.416": "luxury" };
 // palette colours (hex values as published by the reference's style presets; our own textures)
 const SIG = { floor: "#8a6a52", tile: "#cfc8bd", paint: "#d9d1c7", cap: "#e3dcd2", ceiling: "#f2efea", wood: "#6b4a34", woodPanel: "#5f4230",
   bedFrame: "#3a2e27", door: "#4a3628", sheet: "#efede9", duvet: "#cdc8c1", throwM: "#8a5a3e", blackout: "#8d8379", oak: "#b9a690",
   charcoal: "#4c4b49", travTop: "#e2d7c8", bathWall: "#8f8a84", bathFloor: "#77726c", metal: "#1e1e1e", sofa: "#a39b90", rug: "#c9c2b8", lacquer: "#c6c0b8" };
 export const PALETTES = {
+  // glossy mid-walnut floor (roughness 0.22), smooth warm-ivory plaster, light section caps, warm walnut joinery
+  luxury: { name: "Luxury", c: { ...SIG, floor: "#6e4e38", tile: "#d9d0c4", paint: "#eae2d7", cap: "#ede5da", ceiling: "#f4efe8", wood: "#6a4a35",
+    woodPanel: "#5e4230", bedFrame: "#4a372b", door: "#5a4130", sheet: "#f1eee9", duvet: "#e3ddd4", throwM: "#b0784e", blackout: "#a49784",
+    oak: "#8b6a50", sofa: "#c7bcae", rug: "#d6cec3", travTop: "#e9e0d3" }, r: { floor: 0.22, paint: 0.9, woodPanel: 0.4, wood: 0.4 } },
   signature: { name: "Signature walnut", c: SIG },
   light: { name: "Light oak", c: { ...SIG, floor: "#b48e68", tile: "#e4dfd7", paint: "#e8e2d9", cap: "#e6dfd3", wood: "#b08a64", woodPanel: "#a8825c",
     bedFrame: "#8a6e55", door: "#9a7a5a", duvet: "#d8d3cb", throwM: "#a77a5a", blackout: "#b7aa98", oak: "#d2c1a6", charcoal: "#8e8b86",
@@ -125,6 +131,8 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     for (const [key, m] of Object.entries(R.mats)) {
       const hex = c[key] ?? (key === "ceramic" ? "#f4f2ee" : SIG[key] ?? "#cccccc");
       m.color.set(hex);
+      if (FINISH[key]) m.roughness = PALETTES[style].r?.[key] ?? FINISH[key][1]; // (the Luxury palette's glossier floor)
+      if (key === "floor") m.envMapIntensity = style === "luxury" ? 1.15 : 0.6;
     }
     invalidate(200);
   }
@@ -390,7 +398,7 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     },
     // #K405-light at start-up: which room / style to open
     fromHash() {
-      const m = /^#K(\d{3})(?:-(signature|light|graphite))?/.exec(location.hash); if (!m) return null;
+      const m = /^#K(\d{3})(?:-(luxury|signature|light|graphite))?/.exec(location.hash); if (!m) return null;
       const R = rooms.get("K." + m[1]); if (!R) return null;
       if (m[2]) applyStyle(R, m[2]);
       return R.u;

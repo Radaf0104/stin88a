@@ -718,3 +718,40 @@ Client: "1. whenever I went back from the section/room overview to building over
   - **63 had the hinge at the wrong end of the leaf** (the exported leaf origin). They now hang from a new pivot at the plan's hinge.
   - Every leaf opens to the plan's side. Checked: 112 of 112 open toward the arc side, 0 wrong.
   - The plan confirms the earlier rule: bathroom doors into the bathroom (43), entrance doors into the room, the 3 single balcony doors out.
+
+## Luxury-tower look for the template rooms and their copies (v6-webgpu, 2026-11-28)
+Client: "apply it to room 401, 405, 407, 413, and 416, and make them as a template" (look target: research/luxury-tower-reference.md), and "the whole point of this website is to make it interactive, and you can see the room/section as a rotateable, and clear shape". All of it is in the live, rotatable 3D room view.
+- **Template rooms K.401/405/407/413/416**: new default palette **Luxury** (js/roomstyle.js): walnut floor #6E4E38 at roughness 0.22 (env 1.15), warm-ivory plaster #EAE2D7 at 0.9, ivory caps #EDE5DA, walnut joinery. The old palettes stay in the dock; `#K405-luxury` deep links work.
+- **Their copies, every other guest room** (new js/luxe.js, built for whichever room is opened):
+  - a glossy walnut floor over the room (not the bathroom)
+  - warm-ivory plaster on the room's walls while it is shown (the shared plaster materials are put back afterwards)
+  - light ivory section caps
+- **All rooms**:
+  - Cool blue-grey backdrop (#8FA3B8 → #5E7590) by day; the dark one at night.
+  - Narrow-angle "isometric" camera: fov 24 from 1.6× further back; phones fov 32 and closer.
+  - Warm cove light: a 2.5 cm LED line along the top of every wall plus a soft additive wash down the wall, stronger at night.
+  - Soft shading where floor meets walls, a 24 cm gradient strip: the real-time stand-in for baked AO.
+  - The cove and shading pieces are cut away with the walls nearest the camera, like the walls.
+- **Floor reflection** (desktop, classic renderer only; not phones, not WebGPU yet): three's `Reflector` on the room's floor at half resolution, 9-tap blur, Fresnel 5 % looking down → 35 % at grazing angles. Room view: 222 draw calls with the mirror pass. Phones have the glossy floor and its highlights, no extra pass.
+- **Not done**:
+  - Baked AO per room type (Blender Cycles bake to UV2). Feasible with tools/blender/10_bake.py, but it means re-exporting the levels; approximated in real time for now.
+  - Furniture bevels: the template rooms' shapes stay exact.
+  - A furniture outline pass: not needed, since the light caps on the blue backdrop already read crisply.
+- Checked: K.309 (copy) and K.405 (template) by day and night; K.413 / K.310 on the phone; no console errors; the look's shaders are compiled in the background 1.5 s after start; ready 1.4 s (phone emulation, test pane).
+
+## Optimization checklist audit (2026-11-28, user's two checklists)
+| Item | State |
+|---|---|
+| High-poly detail baked to normal maps, decimation, hidden faces removed | **Done** in the Blender pipeline: 03_cleanup decimates elements > 5,000 tris, merges coplanar faces, removes hidden contact faces; textures carry the detail (KTX2 normal maps) |
+| LOD + instancing | **Instancing done** (round 2/3: beds, chairs, toilets, basins, lamps as `InstancedMesh`). LOD: the overview hides TVs, bathroom fittings, small dressing and interior doors (`OVERVIEW_HIDDEN`), and furniture is only drawn for the floors on show. No separate low-poly furniture LOD (furniture is already low-poly). |
+| GLB + Meshopt/Draco + quantization | **Done**: Meshopt, quantized positions / normals / UVs (tools/pack-levels.mjs) |
+| Texture caps 1K / KTX2 / WebP | **Done**: KTX2 (ETC1S/UASTC), 62 textures 5.1 MB, half-size phone set 1.6 MB; WebP for the renders / landing |
+| Atlases to cut draw calls | **Not done**: draws are cut by merging per material per floor instead (shared textures). An atlas would mean re-UVing in Blender for little gain. |
+| Reuse textures across materials | **Done**: one shared KTX2 per file across all levels (round 7); the new walnut floor reuses the wood texture already loaded |
+| Lazy-load | **Done**: landing image + loader first, the 3D behind it; CC0 style textures on the first style room; room accents after start-up |
+| Pause rendering when idle / off-screen; trigger-based motion | **Done**: render on demand (a frame is drawn only when the camera, an animation or a change asks for one); browsers stop requestAnimationFrame in hidden tabs; no continuous animation (doors, lights, fades all run on a click) |
+| Fewer lights / shadows; prefer baked | **Within budget**: one shadow-casting sun (2048 desktop / 1024 phone), a pool of 3 (phone) or 6 point lights moved to the rooms in view, the style rooms borrow from the pool. Lightmaps exist in the pipeline (not shipped); baked AO is the open item above. |
+| Reflections / transparency minimal | **Done**: the floor reflection is desktop only (one room's floor, half resolution); glass is the only transparency |
+| Mobile pixel ratio cap | **Done**: `min(devicePixelRatio, maxDpr, pixel budget) × adaptive scale` |
+| Placeholder first | **Done**: landing image + progress loader |
+| No extra libraries | **Done**: three.js + its own addons only (Reflector is a three addon, loaded on desktop at the first room view) |
