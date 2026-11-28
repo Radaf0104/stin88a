@@ -216,6 +216,20 @@ body.inside .floors, body.inside .card, body.inside .brand { display: none; }
 @keyframes hero-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
 @media (max-width: 600px) { .hero-load { padding: 18px 20px 16px; gap: 12px; } .hero-name { font-size: 18px; } .hero-head b { font-size: 32px; } .hero-pct { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .hero-bar::after, .hero-dot { animation: none; } }
+/* (2026-11-28) pre-rendered turntable (js/turntable.js): over the 3D canvas, under the panels; drag to turn */
+#tt { position: absolute; inset: 0; z-index: 0; overflow: hidden; touch-action: none; cursor: grab; background: #dfe6ec; user-select: none; }
+#tt.hidden { display: none; }
+#ttImg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+#ttSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#ttSvg .spot { fill: transparent; stroke: none; transition: fill 0.15s; }
+#ttSvg .spot.floor.on { fill: rgba(240, 138, 60, 0.38); stroke: rgba(240, 138, 60, 0.9); stroke-width: 1.5; }
+#ttSvg .spot.unit { fill: rgba(47, 181, 122, 0.16); stroke: rgba(255, 255, 255, 0.5); stroke-width: 1; }
+#ttSvg .spot.unit.occupied { fill: rgba(224, 68, 62, 0.16); }
+#ttSvg .spot.unit.on { fill: rgba(47, 181, 122, 0.5); stroke: #fff; stroke-width: 2; }
+#ttSvg .spot.unit.occupied.on { fill: rgba(224, 68, 62, 0.5); }
+#ttSvg .spot.space.on { fill: rgba(200, 105, 63, 0.45); stroke: #fff; stroke-width: 2; }
+#ttHint { display: none; }
+body.tt-on #labels { display: none; } /* (the live 3D labels follow the 3D camera, not the frames) */
 /* (client, 2026-11-28) the view-change veil: the scene dims and blurs, a small card with a loading bar in the middle */
 #viewFade { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity 0.26s ease-out; background: rgba(14, 16, 20, 0.5); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 #viewFade.on { opacity: 1; pointer-events: all; transition: opacity 0.2s ease-in; cursor: progress; }

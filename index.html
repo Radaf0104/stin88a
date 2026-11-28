@@ -118,6 +118,7 @@
     </div>
 
     <div class="toolbar">
+      <button id="ttBtn" class="chip hidden"></button>
       <button id="galleryBtn" class="chip"></button>
       <button id="dayNight" class="chip"></button>
       <button id="langBtn" class="chip"></button>
@@ -193,6 +194,9 @@
       <div class="pano-hint" data-i18n="drag"></div>
     </div>
   </div>
+  <!-- (2026-11-28, test: ?tt=1) pre-rendered turntables for the building overview and the level views (js/turntable.js),
+       started before the live 3D so the first frame can replace the landing picture early -->
+  <script type="module">if (/[?&]tt=1\b/.test(location.search)) import("./js/turntable.js").then((m) => m.boot());</script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

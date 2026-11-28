@@ -1383,6 +1383,7 @@ function styleUnit(u) {
 var hoverFloor = null; // (var: selectFloor may run before this line is reached)
 function setHoverFloor(level) {
   if (state.floor !== null) level = null; // (only in the building overview)
+  window.__tt?.setHover(level === null || level === -1 ? null : "L" + level);
   if (level === hoverFloor) return;
   hoverFloor = level;
   for (const b of bands) b.material.opacity = b.userData.floor === level ? 0.4 : 0;
@@ -1390,6 +1391,7 @@ function setHoverFloor(level) {
 }
 function setHoverUnit(u) {
   if (state.hover === u) return;
+  window.__tt?.setHover(u ? u.label : null);
   state.hover = u; units.forEach(styleUnit); invalidate(80);
 }
 
@@ -1452,6 +1454,12 @@ function renderUI() {
   if (state.inside) $("insideTitle").textContent = state.inside.kind === "space" ? L(state.inside.space.label)
     : `${state.inside.label} · ${L(CONFIG.types[state.inside.type]?.label) ?? ""}`;
   ui.dayNight.textContent = t("time_" + (env.current ?? "day"));
+  // (?tt=1) turntable for this view when one exists (overview / a level), else the live 3D; the chip switches to 3D
+  if (window.__tt) {
+    window.__tt.sync(state.unit || state.inside ? null : state.floor === null ? "overview" : state.floor, env.current === "night" ? "night" : "day");
+    $("ttBtn").classList.toggle("hidden", !!(state.unit || state.inside));
+    $("ttBtn").textContent = window.__tt.enabled ? (lang === "id" ? "⟲ Jelajah 3D" : "⟲ Explore in 3D") : (lang === "id" ? "▦ Putar gambar" : "▦ Turntable");
+  }
   // overview and (UI round) the room view; the floor views keep their plain light
   ui.dayNight.style.display = state.floor === null || state.unit ? "" : "none";
   applyRoomNight();
@@ -1560,6 +1568,7 @@ ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); 
 // (the "Map" and "Massing" buttons were removed at the client's request, 2026-11-26: the site plan and the massing are
 // always shown; the Google 3D map code stays in js/map.js, unused while mapWanted stays false)
 $("galleryBtn").onclick = () => go(() => openGallery("exterior", 0));
+$("ttBtn").onclick = () => go(() => { window.__tt?.toggle(); renderUI(); });
 
 // Room card "Room photos": the room type's photo set + that floor's corridor.
 function openRoomPhotos(u) {
@@ -2087,10 +2096,27 @@ renderer.setRenderTarget(null);
 mark("shaders");
 setTime("day");
 env.onHdriReady((name) => name !== "golden" && setTime(name)); // the sky photo arrived after start-up: switch to it
-window.STIN = { THREE, post, tier, look, scene, camera, renderer, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
+window.STIN = { prepFrame: () => { camera.updateMatrixWorld(); landscape.updateOcclusion(camera, buildingBox, true); if (massing?.updateOcclusion(camera, buildingBox)) refreshShadows(); }, // (tools/turntable-capture.js: the per-frame view updates)
+  THREE, post, tier, look, scene, camera, renderer, env, mood, get accents() { return accents; }, get gtao() { return gtao; }, get composer() { return composer; }, readyAt: performance.now(), timings, levelObjects, landscape, buildingBox, controls,
   iso, spaces, units, levelY, selectFloor, selectUnit, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console
+// (2026-11-28, ?tt=1) the pre-rendered turntables (js/turntable.js, started by index.html) hand their picks to the live site
+window.__tt?.attach({
+  pick: (s) => { setHoverFloor(null); setHoverUnit(null);
+    if (s.kind === "floor") go(() => selectFloor(s.level));
+    else { const u = units.find((x) => x.label === s.label && x.level === s.level); if (u) go(() => selectUnit(u)); } },
+  tooltip: (s, e) => {
+    if (!s) { ui.tooltip.classList.add("hidden"); return; }
+    const f = CONFIG.floors.find((x) => x.level === s.level), u = s.kind !== "floor" ? units.find((x) => x.label === s.label && x.level === s.level) : null;
+    const rooms = units.filter((x) => x.level === s.level && x.kind !== "space");
+    ui.tooltip.textContent = u ? (u.kind === "space" ? `${L(u.space.label)} · ${u.area.toFixed(0)} m²` : `${u.label} · ${u.area.toFixed(1)} m² · ${t(u.status)}`)
+      : `${L(f?.label)} · ${rooms.length ? t("nAvail", rooms.filter((x) => x.status === "available").length) : t("nSpaces", units.filter((x) => x.level === s.level).length)}`;
+    ui.tooltip.style.left = e.clientX + "px"; ui.tooltip.style.top = e.clientY + "px"; ui.tooltip.classList.remove("hidden");
+  },
+  resync: () => renderUI(),
+});
+renderUI();
 ready = true;
 requestAnimationFrame(frame);
 leaveHeroWhenReady(); // the loading-screen render fades into the 3D view (and the intro camera move starts)

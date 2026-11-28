@@ -755,3 +755,28 @@ Client: "apply it to room 401, 405, 407, 413, and 416, and make them as a templa
 | Mobile pixel ratio cap | **Done**: `min(devicePixelRatio, maxDpr, pixel budget) × adaptive scale` |
 | Placeholder first | **Done**: landing image + progress loader |
 | No extra libraries | **Done**: three.js + its own addons only (Reflector is a three addon, loaded on desktop at the first room view) |
+
+## Pre-rendered turntables for the overview and Level 3: test behind ?tt=1 (v6-webgpu, 2026-11-28)
+Client, on the "fake the 3D with videos or images" tip: "this can be implemented, especially during building overview and section overview". Built as a hybrid: the room view stays live 3D.
+- **Frames**: `tools/turntable-capture.js` renders from our own scene in the page, with the classic renderer.
+  - Settings: 2× supersampled, sun shadow map 4096, the view's own camera angle and distance, neighbour blocks stepping aside as in the live view, room status boxes hidden.
+  - 48 frames per 360° (7.5° steps), WebP q 0.82. Desktop 1600×1000, phone 720×1280 with the site's portrait framing.
+  - Sets in `data/tt/`: overview day (3.7 MB) and night (1.5 MB), Level 3 (4.1 MB); phone versions 1.8 / 0.8 / 2.0 MB. A frame is ~45–90 KB (desktop) and ~15–45 KB (phone).
+- **Hotspots**: every frame carries each floor's box hull (overview) or each room's floor outline (Level 3), projected with that frame's camera.
+  - Hover lights a whole floor (overview) or a room in its status colour (Level 3), with the same tooltip as the 3D.
+  - Click → the same fade + loading bar → the next view. The Levels list and room chips highlight the same outlines.
+  - Where floor hulls overlap, the floor whose outline centre is nearest the pointer wins.
+- **Viewer** (`js/turntable.js`):
+  - index.html starts it before the live 3D, so the overview's first frame replaces the landing picture as soon as it is decoded; the other frames stream in, nearest angles first, 6 at a time.
+  - Dragging across the screen turns the building once (pointer events, works with touch).
+  - Views without frames (Levels 1, 2, 4 for now) and the room view use the live 3D.
+  - "⟲ Explore in 3D" switches the overview and level views to the live 3D and back. The live 3D labels are hidden over the frames.
+- **Measured** (local dev server, test pane):
+  - First view: turntable frame at **0.25 s** desktop / **0.26 s** phone, vs live 3D ready at 1.1 s / 1.0 s.
+  - All 48 phone frames (1.7 MB) arrived within ~3 s while the 3D loaded underneath. Scrubbing only swaps decoded images (no GPU work).
+  - On a real mobile connection the gap should be larger (first frame ~80 KB vs the 3D model's download).
+- **Not yet**:
+  - Frames for Levels 1, 2 and 4: same tool, ~1 min each.
+  - A night set for the level views: they are plain white views in both times, so not needed.
+  - Deferring the live 3D download until a room is opened: it still loads in the background right away. Holding it back needs main.js split into a lazy module; the first view no longer waits for it either way.
+  - Making ?tt=1 the default: waiting for the client's go-ahead.
