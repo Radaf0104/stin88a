@@ -16,7 +16,10 @@ const sets = new Map(); // name -> { meta, imgs[], loaded[] }
 let cur = null, frame = 0, hover = null, enabled = true, wantSet = null, dragging = null;
 
 function setName(view, time) { return (view === "overview" ? `overview-${time}` : `level${view}`) + (portrait() ? "-m" : ""); }
+// the frame sets rendered so far (tools/turntable-capture.js); other views use the live 3D without asking the server
+const AVAILABLE = new Set(["overview-day", "overview-night", "level3"].flatMap((n) => [n, n + "-m"]));
 async function loadSet(name) {
+  if (!AVAILABLE.has(name)) return null;
   if (sets.has(name)) return sets.get(name);
   const meta = await fetch(`data/tt/${name}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (!meta) { sets.set(name, null); return null; }
