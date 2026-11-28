@@ -65,6 +65,7 @@ function keyFor(o, name, inBath) {
   if (/plaster|concrete/i.test(name)) return "paint";
   return null;
 }
+const CUT_KEYS = new Set(["paint", "woodPanel", "bathWall", "door", "ceiling", "floor", "bathFloor", "tile"]);
 const easeQuad = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
 export function createRoomStyle({ scene, camera, renderer, objects, spaces, units, levelY, planToWorld, inPoly, rootPos, tooltip, invalidate, patch, onLights, borrowLights, releaseLights, loadTexture }) {
@@ -114,6 +115,8 @@ export function createRoomStyle({ scene, camera, renderer, objects, spaces, unit
     if (t && RELIEF[t] && !m.bumpMap) { m.bumpMap = tex[t]; m.bumpScale = RELIEF[t]; }
     if (t === "fabric" || t === "boucle") m.roughnessMap = tex[t];
     m.userData.rsKey = key;
+    // (client, 2026-11-28) furniture finishes stay in the room view's cutaway; walls, floors, ceiling and doors are cut
+    m.userData.isoKeep = !CUT_KEYS.has(key);
     R.mats[key] = m;
     return m;
   }

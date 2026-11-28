@@ -438,6 +438,23 @@ function jitterInstanceUVs(m) {
 }
 let lightmapManifest = {};
 let loadKtx = null; // url -> Promise<texture>, through the shared KTX2 loader below
+// The room view's cutaway (js/isolate.js) removes the walls between the camera and the room. (client, 2026-11-28: "do
+// not hide furniture (bed frame, drawer, or railing). only hide the wall and TV") Kept: furniture (merged *_furniture
+// meshes and every piece with a kind - bed, casework, chair, lamp, curtain, plant...), and railings. Cut: the
+// building (walls, glass, frames), room shells, door frames and the TV.
+const CUT_KINDS = new Set(["shell", "ceiling", "doorframe", "tv", "door", "stair"]);
+function keepInRoomCut(o) {
+  const k = o.userData.kind;
+  if (k === "railing" || /railing/i.test(o.name)) return true;
+  if (CUT_KINDS.has(k)) return false;
+  return !!k || /_furniture$/.test(o.name);
+}
+const keepMats = new Map();
+function keepMaterial(m) {
+  if (Array.isArray(m)) return m;
+  if (!keepMats.has(m.uuid)) { const c = m.clone(); c.userData.isoKeep = true; keepMats.set(m.uuid, c); }
+  return keepMats.get(m.uuid);
+}
 const GLB_LEVELS = ["L0", "L1", "L2", "L3", "L4", "ROOF"]; // (the 88A file's own SITE level is replaced by the masterplan site plan, see "Ground")
 if (USE_GLB) {
   const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
@@ -517,6 +534,9 @@ if (USE_GLB) {
       if (ud.kind === "tv") tvObjs.push(o);
       if (["shell", "ceiling", "stair", "railing", "doorframe"].includes(ud.kind)) { o.userData.overviewVerts = Infinity; buildingMeshes.push(o); }
       if (ud.lm_set && lightmapManifest[ud.lm_set] && o.geometry.attributes.uv1) { o.material = o.material.clone(); glbLightmapped.push(o); }
+      // (client, 2026-11-28) furniture and railings stay in the room view's cutaway (only walls and the TV go): their
+      // own copy of a material they share with walls, marked before any shader patch (js/isolate.js patch)
+      if (keepInRoomCut(o) && !o.material.userData.isoKeep) o.material = keepMaterial(o.material);
     });
   }
   // lightmaps: one per lightmap set and time of day (falls back to any time that was baked); AO on the same UVs
@@ -690,6 +710,11 @@ Promise.all([sitePlanReady, massingReady]).then(async ([site]) => {
     const m = lawn.material.clone();
     Object.assign(m, { map: t, normalMap: n, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.92 });
     m.color.setRGB(0.5, 0.54, 0.4); grade.patch(m);
+    // (client, 2026-11-28: "the land goes full black") Material.clone() copies userData through JSON, which turns the
+    // old material's stored day colour (a THREE.Color, set once a floor view was shown) into a plain number; the
+    // floor-view blend then copied that number into the colour -> NaN -> a black lawn back in the overview.
+    // The copy's own day colour is the new lawn colour; the blend is re-applied in the current view.
+    m.userData.dayColor = m.color.clone(); sitePlanLift = -1;
     const old = lawn.material; lawn.material = m; const shown = lawn.visible;
     lawn.visible = true; await compileQuietly(lawn); lawn.visible = shown;
     const i = sitePlanMats.indexOf(old); if (i >= 0) sitePlanMats[i] = m;
@@ -920,7 +945,8 @@ for (const f of CONFIG.floors) {
   const s = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
   const hgt = (levelY[f.level + 1] ?? levelY[f.level] + 4) - levelY[f.level];
   const geo = new THREE.BoxGeometry(s.x + 2.4, hgt * 0.96, s.z + 2.4);
-  const band = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xc8693f, transparent: true, opacity: 0, depthWrite: false }));
+  // (client, 2026-11-28) the hovered floor "lights up" as a whole: a warm tint over the entire storey
+  const band = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xf08a3c, transparent: true, opacity: 0, depthWrite: false }));
   band.position.set(ctr.x, levelY[f.level] + hgt / 2, ctr.z);
   band.userData.floor = f.level;
   band.renderOrder = 3;
@@ -1062,6 +1088,7 @@ function selectFloor(level, fly = true) {
   setCut(on ? levelY[level] + 1.35 : null);
   for (const m of unitMeshes) { m.visible = on && m.userData.unit.level === level; styleUnit(m.userData.unit); }
   for (const b of bands) b.visible = !on;
+  hoverFloor = -1; setHoverFloor(null); if (state.hover) setHoverUnit(null); // (no highlight left over from the last view)
   if (fly) {
     if (on) {
       const us = units.filter((u) => u.level === level);
@@ -1332,8 +1359,23 @@ function roomClick(e) {
 
 function styleUnit(u) {
   const m = u.mesh.material, sel = state.unit === u, hov = state.hover === u;
-  m.opacity = sel ? 0.65 : hov ? 0.6 : 0.4;
-  m.emissiveIntensity = (isNight() ? 0.6 : 0.2) + (sel ? 0.4 : hov ? 0.25 : 0);
+  m.opacity = sel ? 0.65 : hov ? 0.75 : 0.4;
+  m.emissiveIntensity = (isNight() ? 0.6 : 0.2) + (sel ? 0.4 : hov ? 0.6 : 0);
+}
+// (client, 2026-11-28) "on building overview ... hover over the level (eg. lv 2) it lights up that whole floor ... during
+// the level overview (eg lv 2) section, the specific room lights up": building overview -> the whole storey glows
+// (from the 3D view or the Levels list); a level view -> the one room (from the 3D view or the room chips)
+var hoverFloor = null; // (var: selectFloor may run before this line is reached)
+function setHoverFloor(level) {
+  if (state.floor !== null) level = null; // (only in the building overview)
+  if (level === hoverFloor) return;
+  hoverFloor = level;
+  for (const b of bands) b.material.opacity = b.userData.floor === level ? 0.4 : 0;
+  invalidate(80);
+}
+function setHoverUnit(u) {
+  if (state.hover === u) return;
+  state.hover = u; units.forEach(styleUnit); invalidate(80);
 }
 
 // ---------- UI ----------
@@ -1366,7 +1408,8 @@ function renderUI() {
     const b = document.createElement("button");
     b.className = "floor-btn" + (state.floor === f.level ? " active" : "");
     b.innerHTML = `<span>${L(f.label)}</span><span class="count">${rooms.length ? t("nAvail", n) : t("nSpaces", nSpaces)}</span>`;
-    b.onclick = () => selectFloor(f.level);
+    b.onclick = () => { setHoverFloor(null); go(() => selectFloor(f.level)); };
+    b.onmouseenter = () => setHoverFloor(f.level); b.onmouseleave = () => setHoverFloor(null);
     ui.floorList.appendChild(b);
   }
   // Room list for the active floor: shared spaces first, then rooms by number
@@ -1378,7 +1421,8 @@ function renderUI() {
       const b = document.createElement("button");
       b.className = "room-btn" + (u.kind === "space" ? " space-btn" : "") + (state.unit === u ? " active" : "");
       b.innerHTML = `<i class="dot" style="background:${hex(colorOf(u))}"></i>${u.label}`;
-      b.onclick = () => selectUnit(u);
+      b.onclick = () => { setHoverUnit(null); go(() => selectUnit(u)); };
+      b.onmouseenter = () => setHoverUnit(u); b.onmouseleave = () => setHoverUnit(null);
       roomList.appendChild(b);
     }
   }
@@ -1418,7 +1462,7 @@ function showSpaceCard(u) {
     ${u.space.pano ? `<button class="btn" id="panoBtn" style="border:1px solid var(--panel-border)">${t("pano360")}</button>` : ""}`;
   ui.card.classList.toggle("hidden", cardHidden);
   ui.card.querySelector(".close").onclick = hideRoomCard;
-  ui.card.querySelector("#enterBtn").onclick = () => openPhotosFor(u);
+  ui.card.querySelector("#enterBtn").onclick = () => go(() => openPhotosFor(u));
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
 }
@@ -1445,13 +1489,49 @@ function showCard(u) {
     ${canAsk ? `<a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(t("wa", u.label))}">${t("ask")}</a>` : ""}`;
   ui.card.classList.toggle("hidden", cardHidden);
   ui.card.querySelector(".close").onclick = hideRoomCard; // (client, 2026-11-27: × hides the card; Back goes back)
-  ui.card.querySelector("#enterBtn").onclick = () => openRoomPhotos(u);
+  ui.card.querySelector("#enterBtn").onclick = () => go(() => openRoomPhotos(u));
   const pb = ui.card.querySelector("#panoBtn");
   if (pb) pb.onclick = () => openPano(u);
 }
 function hideCard() { ui.card.classList.add("hidden"); }
 
-ui.overviewBtn.onclick = () => selectFloor(null);
+// (client, 2026-11-28) "implement a fade out and in whenever user changes tab/view as a loading screen. make a loading
+// bar as well": every view change from the UI runs through go(). The scene fades under a dimmed, blurred veil with a
+// small loading card (the landing loader's style), the switch happens while it is covered (the camera move and the
+// white-view fade are finished at once instead of played), the new view's first frames are drawn, then the veil
+// lifts. ~0.5 s when nothing has to load; a second click while it runs is ignored.
+const fade = { el: $("viewFade"), bar: $("vfBar"), busy: false };
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function go(fn) {
+  if (fade.busy) return;
+  fade.busy = true;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  try {
+    fade.bar.style.transform = "scaleX(0.08)";
+    fade.el.classList.add("on"); fade.el.setAttribute("aria-hidden", "false");
+    await sleep(reduce ? 60 : 200); // (the veil's fade-in)
+    fade.bar.style.transform = "scaleX(0.35)";
+    fn();
+    fade.bar.style.transform = "scaleX(0.6)";
+    // finish the camera move / white-view fade under the veil: until neither runs for two drawn frames (max ~1.5 s)
+    for (let i = 0, calm = 0, t0 = performance.now(); calm < 2 && performance.now() - t0 < 1500; i++) {
+      if (tween) tween.s = -1e9;
+      if (isoAnim) isoAnim.s = -1e9;
+      invalidate(100);
+      await nextFrame();
+      calm = tween || isoAnim ? 0 : calm + 1;
+      fade.bar.style.transform = `scaleX(${Math.min(0.9, 0.6 + i * 0.05)})`;
+    }
+    await nextFrame(); await nextFrame(); // the new view drawn (and any shader built) before it is shown
+    fade.bar.style.transform = "scaleX(1)";
+    await sleep(reduce ? 0 : 120);
+  } finally {
+    fade.el.classList.remove("on"); fade.el.setAttribute("aria-hidden", "true");
+    fade.busy = false;
+  }
+}
+ui.overviewBtn.onclick = () => go(() => selectFloor(null));
 // (client, 2026-11-27) "kedua panel ini bisa di sembunyikan. tombol x berarti hide, bukan kembali. buat tombol kembali
 // diluar dari panel": the two panels hide on their own and come back from a tab; Back (outside the panels) goes one
 // step back: room -> its level -> building overview
@@ -1459,12 +1539,12 @@ function hideRoomCard() { cardHidden = true; renderUI(); }
 $("cardTab").onclick = () => { cardHidden = false; renderUI(); };
 $("floorsHide").onclick = () => { floorsHidden = true; renderUI(); };
 $("floorsTab").onclick = () => { floorsHidden = false; renderUI(); };
-$("backBtn").onclick = () => { if (state.inside) return; if (state.unit) selectFloor(state.unit.level); else if (state.floor !== null) selectFloor(null); };
+$("backBtn").onclick = () => { if (state.inside) return; const u = state.unit, f = state.floor; if (u) go(() => selectFloor(u.level)); else if (f !== null) go(() => selectFloor(null)); };
 ui.langBtn.onclick = () => { lang = lang === "en" ? "id" : "en"; try { localStorage.setItem("stin-lang", lang); } catch {} renderUI(); };
 ui.dayNight.onclick = () => setTime(env.current === "night" ? "day" : "night"); // golden hour was removed: day <-> night
 // (the "Map" and "Massing" buttons were removed at the client's request, 2026-11-26: the site plan and the massing are
 // always shown; the Google 3D map code stays in js/map.js, unused while mapWanted stays false)
-$("galleryBtn").onclick = () => openGallery("exterior", 0);
+$("galleryBtn").onclick = () => go(() => openGallery("exterior", 0));
 
 // Room card "Room photos": the room type's photo set + that floor's corridor.
 function openRoomPhotos(u) {
@@ -1579,10 +1659,8 @@ function pick(e) {
 canvas.addEventListener("pointerdown", (e) => (downAt = [e.clientX, e.clientY]));
 canvas.addEventListener("pointermove", (e) => {
   const hit = pick(e);
-  const prevHover = state.hover;
-  for (const b of bands) b.material.opacity = b === hit ? 0.28 : 0;
-  state.hover = hit?.userData.unit ?? null;
-  if (prevHover !== state.hover) units.forEach(styleUnit);
+  setHoverFloor(hit?.userData.floor ?? null);
+  setHoverUnit(hit?.userData.unit ?? null);
   canvas.style.cursor = hit || (roomView && e.pointerType === "mouse" && roomPick(e)) ? "pointer" : "";
   if (hit) {
     const u = hit.userData.unit;
@@ -1596,7 +1674,7 @@ canvas.addEventListener("pointermove", (e) => {
     ui.tooltip.classList.remove("hidden");
   } else ui.tooltip.classList.add("hidden");
 });
-canvas.addEventListener("pointerleave", () => { ui.tooltip.classList.add("hidden"); });
+canvas.addEventListener("pointerleave", () => { ui.tooltip.classList.add("hidden"); setHoverFloor(null); setHoverUnit(null); });
 // style rooms: hover outline + tooltip with the action ("Open the entry door") over their interactive objects
 canvas.addEventListener("pointermove", (e) => {
   if (roomView && roomStyle?.active && e.pointerType === "mouse" && !state.inside) roomStyle.hover(e, clipPlane.constant);
@@ -1606,8 +1684,9 @@ canvas.addEventListener("pointerup", (e) => {
   if (roomClick(e)) return; // room view: TV on / off, doors open / shut
   const hit = pick(e);
   if (!hit) return;
-  if (hit.userData.unit) selectUnit(hit.userData.unit);
-  else if (hit.userData.floor !== undefined) selectFloor(hit.userData.floor);
+  setHoverFloor(null); setHoverUnit(null);
+  if (hit.userData.unit) { const u = hit.userData.unit; go(() => selectUnit(u)); }
+  else if (hit.userData.floor !== undefined) { const f = hit.userData.floor; go(() => selectFloor(f)); }
 });
 
 // ---------- 360 viewer ----------
@@ -1802,7 +1881,7 @@ function frame(now) {
   if (siteOn && sitePlanMats.length && sitePlanLift !== isoK) {
     sitePlanLift = isoK;
     for (const m of sitePlanMats) {
-      m.userData.dayColor ??= m.color.clone();
+      if (!m.userData.dayColor?.isColor) m.userData.dayColor = m.color.clone(); // (never a JSON-copied number: see the lawn)
       const light = SITE_PLAN_LIGHT[m.name.replace("SITE_", "")];
       if (light) m.color.copy(m.userData.dayColor).lerp(light, isoK);
     }

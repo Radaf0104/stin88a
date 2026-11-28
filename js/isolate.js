@@ -30,7 +30,7 @@ export function createIsolation() {
   let rect = { x0: 0, z0: 0, w: 1, d: 1 };
   // (M2) new renderer: the same numbers as TSL uniform nodes (with .value, so the code below is unchanged) and the
   // test as one shared mask node (a fragment is kept where it is true). Same logic as the GLSL in patch().
-  let maskNode = null;
+  let maskNode = null, keepMaskNode = null;
   if (GPU) {
     const { uniform, texture, positionWorld, screenCoordinate, fract, dot, vec2, float, select, and, or } = TSL;
     for (const k in U) U[k] = k === "uIsoMask" ? U[k] : uniform(U[k].value);
@@ -46,6 +46,7 @@ export function createIsolation() {
     const d = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715)))));
     const dissolved = U.uIsoFade.greaterThan(0).and(isoIn.lessThan(0.5)).and(d.lessThan(U.uIsoFade));
     maskNode = cut.or(dissolved).not();
+    keepMaskNode = dissolved.not(); // (materials marked isoKeep: never in the room view's cutaway)
   }
 
   // The mask covers a fixed area of the world (the building plus a margin), set once.
@@ -78,16 +79,22 @@ export function createIsolation() {
   }
 
   // Adds the mask test to a material (once). Keeps any shader changes the material already has (glass, battens…).
+  // (client, 2026-11-28: "during room overview, do not hide furniture (bed frame, drawer, or railing). only hide the
+  // wall and TV") a material with userData.isoKeep set before patching skips the room view's cutaway test (its own
+  // shader variant); main.js gives furniture and railings such materials, roomstyle.js its furniture finishes.
   function patch(m) {
     if (!m || m.userData.isoPatched || !(m.isMeshStandardMaterial || m.isMeshBasicMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
     m.userData.isoPatched = true;
     // (M2) the node version (see above). The shadow pass keeps everything, as on the classic renderer (its shadow
     // depth material never had the mask): cut-away walls still cast their shadows.
-    if (GPU) { m.maskNode = maskNode; m.maskShadowNode = TSL.bool(true); m.needsUpdate = true; return; }
+    const keep = !!m.userData.isoKeep;
+    if (GPU) { m.maskNode = keep ? keepMaskNode : maskNode; m.maskShadowNode = TSL.bool(true); m.needsUpdate = true; return; }
     const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey?.bind(m);
     m.onBeforeCompile = (sh, r) => {
       prev?.call(m, sh, r);
       Object.assign(sh.uniforms, U);
+      // per material (same shader program for both: no extra compile at start-up): 1 = never in the room cutaway
+      sh.uniforms.uIsoKeep = { value: keep ? 1 : 0 };
       sh.vertexShader = sh.vertexShader
         .replace("#include <common>", "#include <common>\nvarying vec3 vIsoW;")
         .replace("#include <project_vertex>", `#include <project_vertex>
@@ -100,9 +107,9 @@ export function createIsolation() {
         .replace("#include <common>", `#include <common>
           varying vec3 vIsoW;
           uniform sampler2D uIsoMask; uniform vec4 uIsoRect; uniform float uIsoMinY; uniform float uIsoFade; uniform float uIsoDeepY;
-          uniform vec4 uIsoCutA; uniform vec4 uIsoCutB; uniform float uIsoCutY;`)
+          uniform vec4 uIsoCutA; uniform vec4 uIsoCutB; uniform float uIsoCutY; uniform float uIsoKeep;`)
         .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
-          if (vIsoW.y > uIsoCutY && (
+          if (uIsoKeep < 0.5 && vIsoW.y > uIsoCutY && (
               (vIsoW.x > uIsoCutA.x && vIsoW.x < uIsoCutA.z && vIsoW.z > uIsoCutA.y && vIsoW.z < uIsoCutA.w) ||
               (vIsoW.x > uIsoCutB.x && vIsoW.x < uIsoCutB.z && vIsoW.z > uIsoCutB.y && vIsoW.z < uIsoCutB.w))) discard;
           if (uIsoFade > 0.0) {
