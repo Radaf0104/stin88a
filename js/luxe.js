@@ -29,6 +29,7 @@ export function createLuxe({ scene, parent, renderer, rootPos, patch, isStyleRoo
   const woodMap = findMap(scene, /^M_(wood_light|teak_deck|teak_timber)$/);
   const floorMat = new THREE.MeshStandardMaterial({ color: WALNUT, roughness: 0.22, metalness: 0, envMapIntensity: 1.15, name: "LUXE_walnut" });
   if (woodMap) { floorMat.map = woodMap.clone(); floorMat.map.wrapS = floorMat.map.wrapT = THREE.RepeatWrapping; floorMat.map.repeat.set(0.45, 0.45); floorMat.map.needsUpdate = true; }
+  if (floorMat.map) renderer.initTexture(floorMat.map); // (uploaded now: its mip data is shared with the wood texture's)
   floorMat.polygonOffset = true; floorMat.polygonOffsetFactor = -2; floorMat.polygonOffsetUnits = -2;
   const coveMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(COVE).multiplyScalar(1.4), name: "LUXE_cove" });
   const washMat = new THREE.MeshBasicMaterial({ color: COVE, map: gradientTexture([[0, "rgba(255,255,255,1)"], [0.35, "rgba(255,255,255,0.35)"], [1, "rgba(255,255,255,0)"]]),

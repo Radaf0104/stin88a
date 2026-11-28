@@ -780,3 +780,49 @@ Client, on the "fake the 3D with videos or images" tip: "this can be implemented
   - A night set for the level views: they are plain white views in both times, so not needed.
   - Deferring the live 3D download until a room is opened: it still loads in the background right away. Holding it back needs main.js split into a lazy module; the first view no longer waits for it either way.
   - Making ?tt=1 the default: waiting for the client's go-ahead.
+
+## RAM peak and the marketing-traffic budget (v6-webgpu, 2026-11-28)
+Client: "currently it uses 400mb ram when it first load in, and average 150-200mb ram". Budget for in-app phone browsers: RAM < 250–300 MB, initial download 5–8 MB (15 max), interactive < 3 s on 4G, 100–250k triangles in view on a phone, 512–1K textures on a phone.
+- **Measuring**:
+  - `tools/mem-estimate.js` (in the page) adds up GPU textures, CPU copies kept after upload, geometry, drawing buffer + MSAA, render targets, decoded images and the JS heap.
+  - index.html samples the JS heap from the first moment on the local dev server only (`data-mem-peak`, `data-mem-curve` on `<html>`).
+- **Where it went** (before):
+  - Desktop estimate ~365–390 MB: textures 71 MB on the GPU **plus a 64 MB CPU copy** of the same data, geometry 18.5 MB (CPU + GPU), drawing buffer 30 MB (MSAA), shadow map 32 MB, landing picture ~6–9 MB decoded, JS heap ~100–125 MB.
+  - The phone heap spiked to **~102–167 MB at 0.4 s**, while all six levels were parsed at once.
+- **Fixes**:
+  1. **CPU copies of the transcoded textures released.** Every compressed texture of the building is uploaded under the loading screen (109 textures, 7–17 ms), then the mip data is released once every texture in the scene using it is on the GPU (`releaseTextureCopies`). It runs again later for the style rooms' textures. The luxe floor's clone is uploaded when it is made. Texture CPU copies: 64 → 16.5 MB; what's left is uncompressed (sky HDR, canvas textures).
+  2. **Levels parsed one after another** (preloaded, so no download cost; ready time unchanged), and the glTF parsers' JSON / buffer caches dropped afterwards.
+  3. **Phones: no MSAA buffers** (the budget's "no AA on phones"); KTX2 transcoder workers 4 → 2 (3 on desktop).
+  4. **Landing picture freed** after its fade.
+  5. **Turntable frames** kept as their compressed WebP blobs; only the frame on screen is decoded. 48 decoded frames would hold ~180 MB on a phone.
+  6. **Phones: no interior furniture in the overview** (~190k triangles barely seen through the glass); railings stay.
+- **After** (estimates; local dev server, test pane):
+  | | before | after |
+  |---|---|---|
+  | phone JS heap peak during load | 102–167 MB at 0.4 s | **89 MB** (no early spike) |
+  | phone steady state (all categories) | ~200 MB | **~150–190 MB** (textures 35 MB GPU, geometry 18.5 MB, buffers 4 MB, heap ~45–80 MB) |
+  | desktop steady state | ~365–390 MB | **~240–300 MB** |
+  | desktop JS heap steady | ~104 MB | **~45–75 MB** |
+  | ready (live 3D) | ~0.75–1.1 s | unchanged |
+  - Leaks: overview → room → back three times leaves geometries / textures / programs unchanged (774 / 80 / 84). The first visit to each floor uploads that floor once.
+- **Budget status (phone)**:
+  | Item | Budget | Now | State |
+  |---|---|---|---|
+  | RAM | < 250–300 MB | ~150–190 MB steady, heap peak 89 MB | **within**. Re-check on a real iPhone, since GPU memory can only be estimated here |
+  | Initial download | 5–8 MB (15 max) | live 3D: 11.4 MB; turntable (?tt=1): first frame ~40–80 KB, a full phone set 0.8–2 MB | **over** for the live 3D first; **within** with the turntable first |
+  | Interactive on 4G | < 3 s | live 3D: ~11 MB → ~8–10 s on 4G (estimate; no throttling in the test pane); turntable first frame < 1 s | **over** for the live 3D; **within** with the turntable first |
+  | Triangles in view (phone) | 100–250k | overview 373k (was 563k), Level 3 321k, room view 308k (counts include the shadow pass) | **over**. The turntables replace the overview / level views; the room view needs per-room meshes from the Blender pipeline (the levels are merged per material, so a room view still draws its whole floor) |
+  | Textures (phone) | 512–1K | half-size KTX2 set (512) | **within** |
+  | Real-time shadows on phones | baked instead | one 1024 shadow map | **open**: needs a Blender lightmap / AO bake (tools/blender/10_bake.py) |
+- **Next, by impact**:
+  1. Make the turntable the first view (needs the client's go-ahead) and defer the live 3D download until a room is opened (main.js split into a lazy module). This fixes the initial download and time to interactive.
+  2. Per-room interior meshes in the export, so the room view draws only that room (phone triangles).
+  3. Baked lighting / AO, so phones need no shadow map.
+
+## Colour fixes against the hero render (2026-11-28)
+Client: "a flat, yellowish facade, washed-out timber, orange interior glow behind windows in daytime, and a too-saturated sky compared with the reference render".
+- Plaster: neutral tint (0.93 / 0.935 / 0.975, was cream), the warm split of the day grade toned down (1.02/1/0.975 → 1.01/1/0.99), a less yellow ground bounce and a whiter sun (#FFF3E8). Ambient 0.35 → 0.3, so the sun models the facade more.
+- Timber: teak 0.8 / 0.73 / 0.66 (was a bright, cool 0.97 / 1.04 / 1.13): mid-brown like the render's battens.
+- Day window glow 0.8 → 0.1 (night unchanged): the glass reads dark like the render's.
+- Sky: desaturation 0.04 → 0.62, haze 0.15 → 0.55: the render's pale hazy blue.
+- Still slightly pink: the shaded window reveals. The turntable frames were re-rendered with the new colours.

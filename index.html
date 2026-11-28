@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>STIN 88A · Interactive</title>
+  <!-- (dev aid, local dev server only) JS heap sampled from the first moment: window.__mem = { peak, samples } (RAM budget work, IMPROVEMENT_LOG.md) -->
+  <script>if (location.hostname === "localhost") { var M = window.__mem = { peak: 0, samples: [] }; (function s() { var u = performance.memory ? performance.memory.usedJSHeapSize : 0; if (u > M.peak) { M.peak = u; M.peakAt = Math.round(performance.now()); } M.samples.push([Math.round(performance.now()), Math.round(u / 1048576)]); document.documentElement.dataset.memPeak = Math.round(M.peak / 1048576) + "@" + M.peakAt; if (M.samples.length % 4 === 0) document.documentElement.dataset.memCurve = M.samples.filter(function (x, i) { return i % 4 === 0; }).map(function (x) { return x[0] + ":" + x[1]; }).join(" "); if (performance.now() < 20000) setTimeout(s, 50); })(); }</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />

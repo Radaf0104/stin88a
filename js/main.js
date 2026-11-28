@@ -76,7 +76,7 @@ const canvas = document.getElementById("scene");
 // WebGPU is missing (?renderer=webgl2 forces that backend, for testing). Default: the classic WebGLRenderer (r170).
 const renderer = GPU
   ? new THREE.WebGPURenderer({ canvas, antialias: true, stencil: true, forceWebGL: FORCE_WEBGL })
-  : new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true }); // stencil = section caps
+  : new THREE.WebGLRenderer({ canvas, antialias: !phone, stencil: true }); // stencil = section caps; (RAM budget) no MSAA buffers on phones
 if (GPU) await renderer.init();
 const maxDpr = quality.high ? (phone ? 1.25 : 1.5) : 1; // sharpness cap: beyond this the GPU cost rises fast for little visible gain
 renderer.shadowMap.enabled = true;
@@ -217,7 +217,23 @@ function leaveHero() {
   hero.classList.add("fading"); // CSS: opacity 1 -> 0 over 1.8 s, ease-in-out
   hero.setAttribute("aria-busy", "false");
   if (ready) { updateRail(); introFly(); }
-  setTimeout(() => hero.classList.add("gone"), 1850);
+  setTimeout(() => { hero.classList.add("gone"); freeHero(); }, 1850);
+}
+// (RAM budget) the landing picture's decoded bitmap (2000 px: ~9 MB) is dropped once it has faded out
+function freeHero() { try { for (const s of hero.querySelectorAll("source")) s.remove(); const im = hero.querySelector("img"); im.removeAttribute("srcset"); im.src = "data:,"; } catch {} }
+// (RAM budget, 2026-11-28) CPU copies of the transcoded textures: three.js keeps every compressed texture's mip
+// data in JS after uploading it (64 MB on desktop, ~16 MB on phones). The copy is released once every texture in the
+// scene that uses that data has been uploaded (the luxe floor's clone is uploaded when it is made). Clones the glTF
+// loader made for duplicate per-level materials were replaced at load (one material per name) and are never drawn.
+let texFreed = 0;
+function releaseTextureCopies() {
+  const props = renderer.properties, users = new Map(); // mip data -> textures in the scene using it
+  scene.traverse((o) => { for (const m of [].concat(o.material ?? [])) for (const k in m) { const t = m[k]; if (t?.isCompressedTexture && t.mipmaps?.[0]?.data) { const d = t.mipmaps[0].data; if (!users.has(d)) users.set(d, new Set()); users.get(d).add(t); } } });
+  for (const ts of users.values()) {
+    if (![...ts].every((t) => props.get(t).__version === t.version && props.get(t).__webglTexture)) continue;
+    for (const t of ts) for (const mm of t.mipmaps) if (mm.data) { texFreed += mm.data.byteLength; mm.data = null; }
+  }
+  timings.texFreedMB = Math.round(texFreed / 1048576);
 }
 function leaveHeroWhenReady() {
   // wait for the first frames to be drawn (so the fade reveals a finished picture), and for the minimum time
@@ -392,9 +408,11 @@ const doorLeaves = [], ceilingObjs = [], tvObjs = [], glbLightmapped = [];
 const lin = (r, g, b) => [r, g, b].map((v) => Math.pow(v, 2.2));
 const FACADE_TINT = {
   // (M1) teak was lin(0.96, 1.16, 1.41): matched under the old mauve grade, it read grey-beige once that was fixed
-  M_teak_timber: lin(0.97, 1.04, 1.13), M_teak_batten: lin(0.97, 1.04, 1.13), M_teak_deck: lin(1.05, 1.1, 1.12),
+  // (2026-11-28, client: "washed-out timber" vs the hero render's mid-brown battens #9a7a5c) darker, richer teak
+  M_teak_timber: lin(0.8, 0.73, 0.66), M_teak_batten: lin(0.8, 0.73, 0.66), M_teak_deck: lin(1.05, 1.1, 1.12),
   // (M1) was lin(0.95, 0.94, 0.985): its lilac cast (blue up, green down) helped turn the shaded walls mauve
-  M_plaster_cream: lin(0.95, 0.95, 0.945), // (stronger factors barely move sunlit plaster - tone shoulder + highlight lift - and only darken the shade)
+  // (2026-11-28, client: "flat, yellowish facade") a neutral white-grey like the hero render's plaster, not cream
+  M_plaster_cream: lin(0.93, 0.935, 0.975), // (stronger factors barely move sunlit plaster - tone shoulder + highlight lift - and only darken the shade)
 };
 // (M1) physically plausible values: painted / powder-coated frames, railings and fascias are dielectrics (metalness 0;
 // 0.35 mirrored the sky and read navy), brass is a metal. Applied once per shared material.
@@ -462,6 +480,7 @@ if (USE_GLB) {
   const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
     import("three/addons/loaders/GLTFLoader.js"), import("three/addons/loaders/KTX2Loader.js"), import("three/addons/libs/meshopt_decoder.module.js")]);
   const ktx2 = new KTX2Loader().setTranscoderPath("https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/basis/").detectSupport(renderer);
+  ktx2.setWorkerLimit(phone ? 2 : 3); // (RAM budget: each transcoder worker holds its own WASM heap during the load)
   // The levels share their textures (data/levels/tex/*.ktx2). Loaded in parallel (round 4 preloads), each level's
   // parser asked for the same files at the same moment - before any was cached - so ~3 MB downloaded twice. One
   // promise per file: every texture is fetched and transcoded once and shared by all levels (round 7).
@@ -482,7 +501,11 @@ if (USE_GLB) {
   };
   // site shaders by material name (glass with Fresnel, frosted glass, water)
   const OVERRIDE = { M_glass_clear: "Glazing-Clear", M_glass_frosted: "GLAZINGfrosty", M_water: "Water" };
-  const gltfs = await Promise.all(GLB_LEVELS.map((L) => loader.loadAsync(`data/levels/${L}.gltf`).catch((e) => { console.warn("level", L, e); return null; })));
+  // (RAM budget, 2026-11-28) the levels are parsed one after another, not all six at once: their files are preloaded
+  // (index.html), so this costs no download time, and the load-time peak holds one level's JSON, Meshopt decode and
+  // texture transcodes instead of six
+  const gltfs = [];
+  for (const L of GLB_LEVELS) gltfs.push(await loader.loadAsync(`data/levels/${L}.gltf`).catch((e) => { console.warn("level", L, e); return null; }));
   const box = new THREE.Box3(), m4 = new THREE.Matrix4(), v3 = new THREE.Vector3(), sharedMats = new Map();
   for (const gltf of gltfs) {
     if (!gltf) continue;
@@ -553,6 +576,8 @@ if (USE_GLB) {
     }
     invalidate(300);
   };
+  // (RAM budget) the parsers' JSON and buffer caches are not needed once the meshes are built
+  for (const g of gltfs) if (g) { try { g.parser.cache.removeAll(); } catch {} g.parser = null; g.scenes = null; }
   timings.glb = `${gltfs.filter(Boolean).length} levels, ${levelObjects.length} meshes, ${doorLeaves.length} door leaves, ${glbLightmapped.length} lightmapped`;
 }
 // Section caps: a hidden copy flips the stencil bit for every surface behind the cut. Where the count is odd
@@ -807,7 +832,10 @@ function showBand(lo = -Infinity, hi = Infinity) {
   // (round 23) nor the small loose items in every room (chairs, plants, lamps, decor...): through the windows they
   // changed at most 15 of ~89k pixels on any gallery camera, but cost 29 draw calls and ~138k triangles (no frame-time
   // change measurable on a desktop GPU; meant for weak phone GPUs). Beds, casework, curtains and the terrace stay.
-  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv" || OVERVIEW_HIDDEN.has(o.userData.kind) || (o.userData.style_room && SMALL_DRESSING.has(o.userData.kind)))) o.visible = false;
+  // (RAM / triangle budget, 2026-11-28) phones: no interior furniture in the overview (~190k triangles, barely seen
+  // through the glass at that distance); railings stay (they are part of the facade)
+  const phoneSkip = (o) => phone && keepInRoomCut(o) && o.userData.kind !== "railing" && !/railing/i.test(o.name);
+  for (const o of levelObjects) if (outside && (o.userData.bathroom || o.userData.kind === "tv" || OVERVIEW_HIDDEN.has(o.userData.kind) || (o.userData.style_room && SMALL_DRESSING.has(o.userData.kind)) || phoneSkip(o))) o.visible = false;
   for (const m of buildingMeshes) {
     m.geometry.setDrawRange(0, outside ? m.userData.overviewVerts : Infinity);
     if (outside && !m.userData.overviewVerts) m.visible = false;
@@ -2045,6 +2073,13 @@ try {
     for (const t of texs) try { renderer.initTexture(t); } catch {}
     timings.texUploads = texs.size;
   }
+  // (RAM budget) every compressed texture of the building is uploaded now, under the loading screen (not on first
+  // sight), so its CPU copy can be released at once: this trims the load-time peak as well as the steady state
+  { const t0 = performance.now(), texs = new Set();
+    scene.traverse((o) => { for (const m of [].concat(o.material ?? [])) for (const k in m) if (m[k]?.isCompressedTexture && m[k].mipmaps?.[0]?.data) texs.add(m[k]); });
+    for (const t of texs) try { renderer.initTexture(t); } catch {}
+    releaseTextureCopies();
+    timings.texUploadAll = `${texs.size} textures, ${Math.round(performance.now() - t0)} ms`; }
   sky.restore(scene);
   mark("compiled");
   renderScene();
@@ -2101,6 +2136,7 @@ window.STIN = { prepFrame: () => { camera.updateMatrixWorld(); landscape.updateO
   iso, spaces, units, levelY, selectFloor, selectUnit, renderScene, grade, get isoK() { return isoK; }, get roomView() { return roomView; }, tvOf, get roomStyle() { return roomStyle; }, updateRoomCut: () => roomView && updateRoomCut(), cap, flyToRender, setTime, phone,
   renderCam: (i) => { const r = RENDERS[i], t = overviewView.target.clone(); return [t.clone().add(viewDir(r).multiplyScalar(radius * 1.9 * (r.dist ?? 1))), t]; } };
 mark("ready"); // handy for debugging in the browser console
+for (const ms of [4000, 12000, 30000, 60000]) setTimeout(releaseTextureCopies, ms); // (RAM budget: see releaseTextureCopies)
 // (2026-11-28, ?tt=1) the pre-rendered turntables (js/turntable.js, started by index.html) hand their picks to the live site
 window.__tt?.attach({
   pick: (s) => { setHoverFloor(null); setHoverUnit(null);

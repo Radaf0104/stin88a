@@ -22,11 +22,13 @@ async function loadSet(name) {
   if (!meta) { sets.set(name, null); return null; }
   const s = { name, meta, imgs: [], loaded: [] };
   sets.set(name, s);
-  const load = (i) => new Promise((res) => {
-    const im = new Image(); im.decoding = "async"; s.imgs[i] = im;
-    im.onload = () => { s.loaded[i] = true; if (cur === s && i === frame) show(); res(); }; im.onerror = res;
-    im.src = `data/tt/${name}/${String(i).padStart(2, "0")}.webp`;
-  });
+  // (RAM budget) frames are kept as their compressed WebP blobs (~15-90 KB) and only the one on screen is decoded:
+  // 48 decoded frames would hold ~180 MB (phone) / ~300 MB (desktop), far over an in-app browser's budget
+  const load = (i) => fetch(`data/tt/${name}/${String(i).padStart(2, "0")}.webp`).then((r) => (r.ok ? r.blob() : null)).then((b) => {
+    if (!b) return;
+    s.imgs[i] = { src: URL.createObjectURL(b) }; s.loaded[i] = true;
+    if (cur === s && i === frame) show();
+  }).catch(() => {});
   await load(0); // the first frame first, then the rest, nearest the start first, a few at a time
   (async () => {
     const order = []; for (let d = 1; d <= meta.frames / 2; d++) { order.push(d % meta.frames); order.push((meta.frames - d) % meta.frames); }
